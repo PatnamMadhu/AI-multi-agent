@@ -22,6 +22,11 @@ export class WorkflowOrchestrator {
       }
 
       analysis = await analyzeTask(request.question);
+      
+      // Use targetUrl from request as fallback if AI didn't provide a valid URL
+      if (request.targetUrl && (!analysis.startingUrl || analysis.startingUrl === "about:blank")) {
+        analysis.startingUrl = request.targetUrl;
+      }
 
       // Step 2: Initialize browser
       if (progressCallback) {

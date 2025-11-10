@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import { TaskInput } from "@/components/TaskInput";
 import { ProgressIndicator } from "@/components/ProgressIndicator";
 import { ScreenshotGallery } from "@/components/ScreenshotGallery";
@@ -9,40 +11,105 @@ import { Screenshot, WorkflowResponse } from "@shared/schema";
 import { Bot, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Home() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [workflow, setWorkflow] = useState<WorkflowResponse | null>(null);
   const [selectedScreenshot, setSelectedScreenshot] = useState<Screenshot | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const { toast } = useToast();
 
-  // Mock progress state for demonstration
-  const [progress] = useState({
-    currentStep: 3,
+  // Progress state that updates during workflow capture
+  const [progress, setProgress] = useState({
+    currentStep: 0,
     totalSteps: 5,
-    statusMessage: "Analyzing task and planning navigation steps...",
+    statusMessage: "Preparing to capture workflow...",
     steps: [
-      { label: "Analyzing task with AI", status: "completed" as const },
-      { label: "Planning navigation steps", status: "completed" as const },
-      { label: "Launching browser automation", status: "in-progress" as const },
+      { label: "Analyzing task with AI", status: "pending" as const },
+      { label: "Planning navigation steps", status: "pending" as const },
+      { label: "Launching browser automation", status: "pending" as const },
       { label: "Capturing UI screenshots", status: "pending" as const },
       { label: "Processing results", status: "pending" as const },
     ],
   });
 
-  const handleTaskSubmit = async (question: string) => {
-    setIsLoading(true);
-    setError(null);
-    setWorkflow(null);
+  const captureWorkflowMutation = useMutation({
+    mutationFn: async (question: string) => {
+      // Update progress to show we're starting
+      setProgress(prev => ({
+        ...prev,
+        currentStep: 1,
+        statusMessage: "Analyzing task with AI...",
+        steps: prev.steps.map((step, idx) => ({
+          ...step,
+          status: idx === 0 ? "in-progress" as const : "pending" as const,
+        })),
+      }));
 
-    // TODO: This will be replaced with actual API call in integration phase
-    console.log("Task submitted:", question);
-    
-    // Simulated delay for demonstration
-    setTimeout(() => {
-      setIsLoading(false);
-    }, 2000);
+      const result = await apiRequest<WorkflowResponse>("POST", "/api/capture-workflow", {
+        question,
+      });
+
+      return result;
+    },
+    onSuccess: (data) => {
+      // Always set workflow so we can display results or errors
+      setWorkflow(data);
+      
+      // Update progress to show completion
+      setProgress(prev => ({
+        ...prev,
+        currentStep: 5,
+        statusMessage: data.status === "success" ? "Workflow capture complete!" : "Workflow capture encountered errors",
+        steps: prev.steps.map(step => ({
+          ...step,
+          status: "completed" as const,
+        })),
+      }));
+
+      // Show appropriate toast based on status
+      if (data.status === "success") {
+        toast({
+          title: "Success!",
+          description: `Captured ${data.screenshots.length} steps in ${(data.processingDuration / 1000).toFixed(1)}s`,
+        });
+      } else if (data.status === "partial") {
+        toast({
+          title: "Partially completed",
+          description: "Some steps were captured, but errors occurred.",
+          variant: "destructive",
+        });
+      } else if (data.status === "failed") {
+        toast({
+          title: "Capture Failed",
+          description: data.error || "The workflow capture failed",
+          variant: "destructive",
+        });
+      }
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to capture workflow",
+        variant: "destructive",
+      });
+      
+      // Reset progress on error
+      setProgress(prev => ({
+        ...prev,
+        currentStep: 0,
+        statusMessage: "Error occurred",
+        steps: prev.steps.map(step => ({
+          ...step,
+          status: "pending" as const,
+        })),
+      }));
+    },
+  });
+
+  const handleTaskSubmit = async (question: string) => {
+    setWorkflow(null);
+    captureWorkflowMutation.mutate(question);
   };
 
   const handleImageClick = (screenshot: Screenshot) => {
@@ -50,14 +117,21 @@ export default function Home() {
     setIsModalOpen(true);
   };
 
-  const handleRetry = () => {
-    setError(null);
-    setWorkflow(null);
-  };
-
   const handleNewCapture = () => {
     setWorkflow(null);
-    setError(null);
+    captureWorkflowMutation.reset();
+    setProgress({
+      currentStep: 0,
+      totalSteps: 5,
+      statusMessage: "Preparing to capture workflow...",
+      steps: [
+        { label: "Analyzing task with AI", status: "pending" as const },
+        { label: "Planning navigation steps", status: "pending" as const },
+        { label: "Launching browser automation", status: "pending" as const },
+        { label: "Capturing UI screenshots", status: "pending" as const },
+        { label: "Processing results", status: "pending" as const },
+      ],
+    });
   };
 
   return (
@@ -88,7 +162,7 @@ export default function Home() {
       {/* Main Content */}
       <main className="max-w-6xl mx-auto px-6 py-8 space-y-8">
         {/* Input Section */}
-        {!workflow && !error && (
+        {!workflow && !captureWorkflowMutation.isError && (
           <div className="space-y-6">
             <div className="space-y-2">
               <h2 className="text-2xl font-semibold">Capture Any Workflow</h2>
@@ -96,12 +170,12 @@ export default function Home() {
                 Describe the task you want to capture, and our AI will automatically navigate the application and screenshot each step of the workflow.
               </p>
             </div>
-            <TaskInput onSubmit={handleTaskSubmit} isLoading={isLoading} />
+            <TaskInput onSubmit={handleTaskSubmit} isLoading={captureWorkflowMutation.isPending} />
           </div>
         )}
 
         {/* Loading State */}
-        {isLoading && (
+        {captureWorkflowMutation.isPending && (
           <ProgressIndicator
             currentStep={progress.currentStep}
             totalSteps={progress.totalSteps}
@@ -111,10 +185,19 @@ export default function Home() {
         )}
 
         {/* Error State */}
-        {error && <ErrorDisplay error={error} onRetry={handleRetry} />}
+        {(captureWorkflowMutation.isError || (workflow && workflow.status === "failed")) && (
+          <ErrorDisplay 
+            error={
+              captureWorkflowMutation.error?.message || 
+              (workflow?.error) || 
+              "An unknown error occurred"
+            } 
+            onRetry={handleNewCapture}
+          />
+        )}
 
         {/* Results */}
-        {workflow && !isLoading && (
+        {workflow && !captureWorkflowMutation.isPending && workflow.status !== "failed" && (
           <div className="space-y-8">
             <div className="flex items-center justify-between">
               <div>

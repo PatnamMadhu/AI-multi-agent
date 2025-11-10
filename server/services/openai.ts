@@ -17,29 +17,54 @@ Given a user's question about how to perform a task in a web application, you mu
 1. Identify the target application
 2. Estimate the number of steps required
 3. Generate a detailed navigation plan with specific actions
-4. Provide the starting URL
+4. Provide the starting URL (the main page of the application)
+
+IMPORTANT RULES:
+- The startingUrl must be a valid, complete URL to the application's main page
+- For "navigate" actions (to different pages), put the target URL in the "value" field
+- For "click" actions, put the CSS selector in the "selector" field
+- For "type" actions, put the CSS selector in "selector" and text in "value"
+- For "screenshot" actions, leave selector and value empty
+- Be as specific as possible with CSS selectors (use IDs, data attributes, aria-labels, class names)
+- You can use "navigate" actions if the workflow requires visiting different URLs
 
 Each navigation step should include:
-- stepNumber: The order of this step
-- action: The type of action (navigate, click, type, wait, screenshot)
+- stepNumber: The order of this step (starting from 1)
+- action: "navigate", "click", "type", "wait", or "screenshot"
 - description: A clear description of what this step does
-- selector: CSS selector for the element to interact with (optional)
-- value: Value to type into inputs (optional)
-- waitFor: What to wait for before proceeding (optional)
+- selector: CSS selector for the element to interact with (required for click/type)
+- value: Value for type actions OR URL for navigate actions
+- waitFor: Optional - what to wait for before proceeding
 
 Respond ONLY with valid JSON in this exact format:
 {
-  "targetApplication": "string",
-  "estimatedSteps": number,
-  "startingUrl": "string",
+  "targetApplication": "Linear",
+  "estimatedSteps": 4,
+  "startingUrl": "https://linear.app",
   "navigationPlan": [
     {
       "stepNumber": 1,
-      "action": "navigate",
-      "description": "Navigate to the application",
+      "action": "screenshot",
+      "description": "Capture the Linear homepage",
       "selector": "",
       "value": "",
-      "waitFor": "networkidle"
+      "waitFor": ""
+    },
+    {
+      "stepNumber": 2,
+      "action": "click",
+      "description": "Click the New Project button",
+      "selector": "button[aria-label='New project']",
+      "value": "",
+      "waitFor": ""
+    },
+    {
+      "stepNumber": 3,
+      "action": "screenshot",
+      "description": "Capture the project creation modal",
+      "selector": "",
+      "value": "",
+      "waitFor": ""
     }
   ]
 }`,

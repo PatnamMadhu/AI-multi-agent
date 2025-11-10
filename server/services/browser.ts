@@ -42,6 +42,19 @@ export class BrowserAutomation {
     const screenshots: Screenshot[] = [];
     const plan = analysis.navigationPlan;
 
+    // Navigate to the starting URL first
+    if (analysis.startingUrl && analysis.startingUrl !== "about:blank") {
+      try {
+        await this.page.goto(analysis.startingUrl, {
+          waitUntil: "networkidle2",
+          timeout: 30000,
+        });
+        await this.page.waitForTimeout(1000);
+      } catch (error) {
+        console.error("Error navigating to starting URL:", error);
+      }
+    }
+
     for (let i = 0; i < plan.length; i++) {
       const step = plan[i];
       
@@ -87,7 +100,16 @@ export class BrowserAutomation {
 
     switch (step.action.toLowerCase()) {
       case "navigate":
-        await this.page.goto(step.value || step.selector || "about:blank", {
+        const url = step.value || step.selector;
+        if (!url) {
+          console.warn(`Navigation step ${step.stepNumber} missing URL, skipping`);
+          break;
+        }
+        if (url === "about:blank") {
+          console.warn(`Navigation step ${step.stepNumber} has about:blank, skipping`);
+          break;
+        }
+        await this.page.goto(url, {
           waitUntil: step.waitFor as any || "networkidle2",
           timeout: 30000,
         });
@@ -116,7 +138,9 @@ export class BrowserAutomation {
         break;
 
       case "screenshot":
-        // Screenshot will be taken after this step
+        // Screenshot will be taken after this step automatically
+        // Just wait a moment for UI to settle
+        await this.page.waitForTimeout(500);
         break;
 
       default:
