@@ -1,16 +1,44 @@
 import puppeteer, { Browser, Page } from "puppeteer";
-import { NavigationStep, Screenshot, TaskAnalysis, BoundingBox } from "@shared/schema";
+import {
+  NavigationStep,
+  Screenshot,
+  TaskAnalysis,
+  BoundingBox,
+} from "@shared/schema";
 import { WaitManager } from "./waitManager";
-import { NavigationError, ElementNotFoundError, isRetryableError } from "./errors";
+import {
+  NavigationError,
+  ElementNotFoundError,
+  isRetryableError,
+} from "./errors";
 import { VisualDiffDetector } from "./visualDiff";
 import { evaluateConditional } from "./conditionalEvaluator";
+
+/**
+ * Type guard for Puppeteer lifecycle events
+ */
+const validWaitUntilEvents = [
+  "load",
+  "domcontentloaded",
+  "networkidle0",
+  "networkidle2",
+] as const;
+
+type WaitUntilEvent = (typeof validWaitUntilEvents)[number];
+
+function isWaitUntilEvent(value: unknown): value is WaitUntilEvent {
+  return (
+    typeof value === "string" &&
+    validWaitUntilEvents.includes(value as WaitUntilEvent)
+  );
+}
 
 export class BrowserAutomation {
   private browser: Browser | null = null;
   private page: Page | null = null;
   private waitManager: WaitManager | null = null;
   private visualDiffDetector: VisualDiffDetector | null = null;
-  private lastBoundingBox: BoundingBox | null = null; // Track last interacted element
+  private lastBoundingBox: BoundingBox | null = null;
 
   constructor(visualDiffDetector?: VisualDiffDetector) {
     this.visualDiffDetector = visualDiffDetector || null;
@@ -20,82 +48,70 @@ export class BrowserAutomation {
     this.browser = await puppeteer.launch({
       headless: true,
       args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
       ],
     });
 
     this.page = await this.browser.newPage();
-    
-    // Initialize WaitManager with the page
     this.waitManager = new WaitManager(this.page);
-    
-    // Set a reasonable viewport
+
     await this.page.setViewport({
       width: 1280,
       height: 720,
       deviceScaleFactor: 1,
     });
-
-    // Set a modern user agent
     await this.page.setUserAgent(
-      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     );
   }
 
   async executeNavigationPlan(
     analysis: TaskAnalysis,
-    progressCallback?: (step: number, message: string) => void
+    progressCallback?: (step: number, message: string) => void,
   ): Promise<Screenshot[]> {
-    if (!this.page) {
+    if (!this.page || !this.waitManager) {
       throw new Error("Browser not initialized");
     }
 
     const screenshots: Screenshot[] = [];
     const plan = analysis.navigationPlan;
 
-    // Navigate to the starting URL first
+    // Navigate to starting URL
     if (analysis.startingUrl && analysis.startingUrl !== "about:blank") {
       try {
-        if (this.waitManager) {
-          await this.waitManager.onNavigationStart();
-        }
+        await this.waitManager.onNavigationStart();
         await this.page.goto(analysis.startingUrl, {
           waitUntil: "networkidle2",
           timeout: 30000,
         });
-        if (this.waitManager) {
-          this.waitManager.onNavigationEnd();
-          // Wait for stability after initial navigation
-          await this.waitManager.waitForStability({ timeout: 3000 });
-        }
+        await this.waitManager.onNavigationEnd();
+        await this.waitManager.waitForStability({ timeout: 3000 });
       } catch (error) {
         console.error("Error navigating to starting URL:", error);
       }
     }
 
+    // Execute navigation plan
     for (let i = 0; i < plan.length; i++) {
       const step = plan[i];
-      
+
       if (progressCallback) {
         progressCallback(i + 1, `Executing: ${step.description}`);
       }
 
       try {
-        // Execute step and collect any screenshots from branch steps
         const stepScreenshots = await this.executeStepWithScreenshots(step);
         screenshots.push(...stepScreenshots);
-        
       } catch (error) {
-        const isRetryable = isRetryableError(error);
+        const retryable = isRetryableError(error);
         console.error(
-          `Error executing step ${step.stepNumber} (${isRetryable ? 'retryable' : 'non-retryable'}):`,
-          error
+          `Error executing step ${step.stepNumber} (${retryable ? "retryable" : "non-retryable"}):`,
+          error,
         );
-        
-        // Try to capture error state screenshot
+
         try {
           const errorScreenshot = await this.captureScreenshot({
             ...step,
@@ -103,59 +119,53 @@ export class BrowserAutomation {
               error instanceof Error ? error.message : String(error)
             })`,
           });
-          if (errorScreenshot) {
-            screenshots.push(errorScreenshot);
-          }
+          if (errorScreenshot) screenshots.push(errorScreenshot);
         } catch (screenshotError) {
           console.error("Failed to capture error screenshot:", screenshotError);
         }
-        
-        // Continue with next steps despite error (partial results)
       }
     }
 
     return screenshots;
   }
 
-  /**
-   * Execute a step and return all screenshots generated (including from branch steps)
-   */
-  private async executeStepWithScreenshots(step: NavigationStep): Promise<Screenshot[]> {
+  private async executeStepWithScreenshots(
+    step: NavigationStep,
+  ): Promise<Screenshot[]> {
     const screenshots: Screenshot[] = [];
 
-    // Guard against missing action
     if (!step.action) {
       console.warn(`[Step ${step.stepNumber}] Missing action, skipping`);
       return screenshots;
     }
 
-    // For conditional steps, execute branch steps and collect their screenshots
     if (step.action.toLowerCase() === "conditional") {
-      if (!this.page) {
+      if (!this.page)
         throw new Error("Page not initialized - cannot evaluate conditional");
-      }
-      
+
       if (step.conditional) {
-        console.log(`[Step ${step.stepNumber}] Evaluating conditional: ${step.description}`);
-        const branchSteps = await evaluateConditional(step.conditional, this.page);
-        
-        // Recursively execute and capture screenshots for each branch step
+        console.log(
+          `[Step ${step.stepNumber}] Evaluating conditional: ${step.description}`,
+        );
+        const branchSteps = await evaluateConditional(
+          step.conditional,
+          this.page,
+        );
+
         for (const branchStep of branchSteps) {
-          const branchScreenshots = await this.executeStepWithScreenshots(branchStep);
-          screenshots.push(...branchScreenshots);
+          const branchScreens =
+            await this.executeStepWithScreenshots(branchStep);
+          screenshots.push(...branchScreens);
         }
       } else {
-        console.warn(`[Step ${step.stepNumber}] Conditional step missing conditional field`);
+        console.warn(
+          `[Step ${step.stepNumber}] Conditional step missing conditional field`,
+        );
       }
     } else {
-      // Execute regular step
       await this.executeStep(step);
-
-      // Capture screenshot for this step
-      const screenshot = await this.captureScreenshot(step);
-      if (screenshot) {
-        screenshots.push(screenshot);
-      }
+      const shot = await this.captureScreenshot(step);
+      if (shot) screenshots.push(shot);
     }
 
     return screenshots;
@@ -168,100 +178,80 @@ export class BrowserAutomation {
 
     switch (step.action.toLowerCase()) {
       case "navigate":
-        const url = step.value || step.selector;
-        if (!url) {
-          console.warn(`Navigation step ${step.stepNumber} missing URL, skipping`);
-          break;
-        }
-        if (url === "about:blank") {
-          console.warn(`Navigation step ${step.stepNumber} has about:blank, skipping`);
-          break;
-        }
-
-        // Navigation failures are non-retryable (state reset)
-        try {
-          await this.waitManager.onNavigationStart();
-          await this.page.goto(url, {
-            waitUntil: step.waitFor as any || "networkidle2",
-            timeout: 30000,
-          });
-          this.waitManager.onNavigationEnd();
-          
-          // Wait for page stability after navigation
-          await this.waitManager.waitForStability({ timeout: 3000 });
-        } catch (error) {
-          throw new NavigationError(
-            url,
-            error instanceof Error ? error.message : String(error),
-            step.stepNumber
-          );
-        }
+        await this.handleNavigate(step);
         break;
 
       case "click":
         if (step.selector) {
-          // Use retries for selector waiting (idempotent)
-          await this.waitManager.waitForSelector(step.selector, { timeout: 10000 });
-          
-          // Capture bounding box before click
-          this.lastBoundingBox = await this.captureBoundingBox(step.selector, "click");
-          
-          // Click operation with retry
+          await this.waitManager.waitForSelector(step.selector, {
+            timeout: 10000,
+          });
+          this.lastBoundingBox = await this.captureBoundingBox(
+            step.selector,
+            "click",
+          );
+
           await this.waitManager.withRetry(
             async () => {
               try {
                 await this.page!.click(step.selector!);
-              } catch (error) {
+              } catch {
                 throw new ElementNotFoundError(step.selector!, step.stepNumber);
               }
             },
-            { maxRetries: 2, baseDelay: 500 }
+            { maxRetries: 2, baseDelay: 500 },
           );
-          
-          // Wait for UI to settle after click
-          await this.waitManager.waitForStability({ timeout: 2000, stabilityDelay: 300 });
+
+          await this.waitManager.waitForStability({
+            timeout: 2000,
+            stabilityDelay: 300,
+          });
         }
         break;
 
       case "type":
         if (step.selector && step.value) {
-          // Wait for input element with retry
-          await this.waitManager.waitForSelector(step.selector, { timeout: 10000 });
-          
-          // Capture bounding box before typing
-          this.lastBoundingBox = await this.captureBoundingBox(step.selector, "type");
-          
-          // Type operation with retry
+          await this.waitManager.waitForSelector(step.selector, {
+            timeout: 10000,
+          });
+          this.lastBoundingBox = await this.captureBoundingBox(
+            step.selector,
+            "type",
+          );
+
           await this.waitManager.withRetry(
             async () => {
               try {
-                // Clear existing value first
                 await this.page!.click(step.selector!, { clickCount: 3 });
-                await this.page!.type(step.selector!, step.value!, { delay: 50 });
-              } catch (error) {
+                await this.page!.type(step.selector!, step.value!, {
+                  delay: 50,
+                });
+              } catch {
                 throw new ElementNotFoundError(step.selector!, step.stepNumber);
               }
             },
-            { maxRetries: 2, baseDelay: 500 }
+            { maxRetries: 2, baseDelay: 500 },
           );
-          
-          // Wait for any dynamic updates (autocomplete, validation, etc.)
-          await this.waitManager.waitForStability({ timeout: 2000, stabilityDelay: 300 });
+
+          await this.waitManager.waitForStability({
+            timeout: 2000,
+            stabilityDelay: 300,
+          });
         }
         break;
 
       case "wait":
         if (step.selector) {
-          await this.waitManager.waitForSelector(step.selector, { timeout: 15000 });
+          await this.waitManager.waitForSelector(step.selector, {
+            timeout: 15000,
+          });
         } else {
           const waitTime = parseInt(step.value || "2000");
-          await new Promise(resolve => setTimeout(resolve, waitTime));
+          await new Promise((resolve) => setTimeout(resolve, waitTime));
         }
         break;
 
       case "screenshot":
-        // Screenshot will be taken after this step automatically
-        // Wait for UI to fully settle
         await this.waitManager.waitForStability({ timeout: 2000 });
         break;
 
@@ -271,77 +261,107 @@ export class BrowserAutomation {
   }
 
   /**
-   * Capture the bounding box of an element for annotation
+   * Safe navigation logic with selector fallback.
    */
+  private async handleNavigate(step: NavigationStep): Promise<void> {
+    const url = step.value || step.selector;
+    if (!url || url === "about:blank") {
+      console.warn(`Navigation step ${step.stepNumber} missing or invalid URL`);
+      return;
+    }
+
+    const waitFor = step.waitFor;
+    const isLifecycleEvent = isWaitUntilEvent(waitFor);
+
+    try {
+      await this.waitManager!.onNavigationStart();
+
+      const response = await this.page!.goto(url, {
+        waitUntil: isLifecycleEvent ? waitFor : "networkidle2",
+        timeout: 30000,
+      });
+
+      this.waitManager!.onNavigationEnd();
+
+      if (!response || !response.ok()) {
+        console.warn(
+          `[BrowserAutomation] Navigation to ${url} returned status: ${response ? response.status() : "no response"}`,
+        );
+      }
+
+      // If waitFor is a selector, wait for it explicitly
+      if (waitFor && !isLifecycleEvent) {
+        console.log(`[BrowserAutomation] Waiting for selector: ${waitFor}`);
+        await this.page!.waitForSelector(waitFor, { timeout: 10000 });
+      }
+
+      await this.waitManager!.waitForStability({ timeout: 3000 });
+    } catch (error) {
+      throw new NavigationError(
+        url,
+        error instanceof Error ? error.message : String(error),
+        step.stepNumber,
+      );
+    }
+  }
+
   private async captureBoundingBox(
     selector: string,
-    label: string
+    label: string,
   ): Promise<BoundingBox | null> {
     if (!this.page) return null;
 
     try {
-      const boundingBox = await this.page.evaluate((sel) => {
-        const element = document.querySelector(sel);
-        if (!element) return null;
-
-        const rect = element.getBoundingClientRect();
-        return {
-          x: rect.x,
-          y: rect.y,
-          width: rect.width,
-          height: rect.height,
-        };
+      const box = await this.page.evaluate((sel) => {
+        const el = document.querySelector(sel);
+        if (!el) return null;
+        const rect = el.getBoundingClientRect();
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
       }, selector);
 
-      if (boundingBox) {
-        return {
-          ...boundingBox,
-          label,
-        };
-      }
+      return box ? { ...box, label } : null;
     } catch (error) {
       console.warn(`Failed to capture bounding box for ${selector}:`, error);
+      return null;
     }
-
-    return null;
   }
 
-  private async captureScreenshot(step: NavigationStep): Promise<Screenshot | null> {
-    if (!this.page) {
-      throw new Error("Page not initialized");
+  private async captureScreenshot(
+    step: NavigationStep,
+  ): Promise<Screenshot | null> {
+    if (!this.page) throw new Error("Page not initialized");
+
+    let buffer: Buffer;
+    try {
+      buffer = (await this.page.screenshot({
+        type: "png",
+        fullPage: false,
+      })) as Buffer;
+    } catch (err) {
+      console.error("Failed to capture screenshot:", err);
+      return null;
     }
 
-    // screenshot() returns Buffer by default (no encoding specified)
-    const screenshotBuffer = await this.page.screenshot({
-      type: "png",
-      fullPage: false,
-    }) as Buffer;
-
-    // Check for duplicates using visual diff detector
     if (this.visualDiffDetector) {
       const duplicateOf = await this.visualDiffDetector.isDuplicate(
         step.stepNumber,
-        screenshotBuffer
+        buffer,
       );
-
       if (duplicateOf !== null) {
-        // Skip this screenshot - it's a duplicate
         console.log(
-          `Skipping screenshot ${step.stepNumber} - duplicate of step ${duplicateOf}`
+          `Skipping screenshot ${step.stepNumber} - duplicate of ${duplicateOf}`,
         );
-        // Reset bounding box since we're skipping this screenshot
         this.lastBoundingBox = null;
-        return null; // Return null to skip adding to screenshots array
+        return null;
       }
     }
 
-    const base64Image = screenshotBuffer.toString("base64");
+    const base64Image = buffer.toString("base64");
     const url = this.page.url();
 
-    // Include bounding box annotations if captured
-    const annotations = this.lastBoundingBox ? [this.lastBoundingBox] : undefined;
-    
-    // Reset for next screenshot
+    const annotations = this.lastBoundingBox
+      ? [this.lastBoundingBox]
+      : undefined;
     this.lastBoundingBox = null;
 
     return {
@@ -355,10 +375,7 @@ export class BrowserAutomation {
   }
 
   async setCookies(cookies: any[]): Promise<void> {
-    if (!this.page) {
-      throw new Error("Page not initialized");
-    }
-
+    if (!this.page) throw new Error("Page not initialized");
     await this.page.setCookie(...cookies);
   }
 

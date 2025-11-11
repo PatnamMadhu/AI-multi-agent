@@ -1,4 +1,4 @@
-import blockhash from "blockhash-core";
+import { bmvbhash } from "blockhash-core";
 import { PNG } from "pngjs";
 
 export interface PerceptualHash {
@@ -48,8 +48,8 @@ export class VisualDiffDetector {
           data: new Uint8Array(data), // Use full RGBA data
         };
 
-        // Compute blockhash with RGBA data (4 channels)
-        const hash = blockhash(imgData, this.HASH_BITS, 2);
+        // Compute blockhash with RGBA data (4 channels automatically handled)
+        const hash = bmvbhash(imgData, this.HASH_BITS);
 
         resolve({
           hash,
@@ -102,7 +102,7 @@ export class VisualDiffDetector {
     this.screenshotHashes.set(stepNumber, currentHash);
 
     // Compare with all previous screenshots
-    for (const [prevStepNumber, prevHash] of this.screenshotHashes.entries()) {
+    for (const [prevStepNumber, prevHash] of Array.from(this.screenshotHashes.entries())) {
       if (prevStepNumber >= stepNumber) {
         continue; // Skip current and future steps
       }
