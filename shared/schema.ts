@@ -23,8 +23,41 @@ export const taskRequestSchema = z.object({
 
 export type TaskRequest = z.infer<typeof taskRequestSchema>;
 
-// Schema for individual navigation steps
-export const navigationStepSchema = z.object({
+// Define base navigation step type
+type BaseNavigationStep = {
+  stepNumber: number;
+  action: string;
+  description: string;
+  selector?: string;
+  value?: string;
+  waitFor?: string;
+};
+
+// Discriminated union for conditional branches
+export type ConditionalBranch =
+  | {
+      type: "if-else" | "element-exists" | "text-contains" | "url-matches";
+      condition: string;
+      selector?: string;
+      expectedValue?: string;
+      ifBranch: NavigationStep[];
+      elseBranch?: NavigationStep[];
+    }
+  | {
+      type: "switch-case";
+      condition: string;
+      selector?: string;
+      expectedValue?: string;
+      cases: Array<{ matchValue: string; steps: NavigationStep[] }>;
+      defaultBranch?: NavigationStep[];
+    };
+
+export type NavigationStep = BaseNavigationStep & {
+  conditional?: ConditionalBranch;
+};
+
+// Base navigation step schema without conditional
+const baseNavigationStepSchema = z.object({
   stepNumber: z.number(),
   action: z.string(),
   description: z.string(),
@@ -33,7 +66,42 @@ export const navigationStepSchema = z.object({
   waitFor: z.string().optional(),
 });
 
-export type NavigationStep = z.infer<typeof navigationStepSchema>;
+// Schema for switch-case branches
+const switchCaseSchema: z.ZodType<{ matchValue: string; steps: NavigationStep[] }> = z.object({
+  matchValue: z.string(),
+  steps: z.array(z.lazy(() => navigationStepSchema as any)),
+}) as any;
+
+// Binary conditional schema (if-else, element-exists, etc.)
+const binaryConditionalSchema: z.ZodType<Extract<ConditionalBranch, { type: "if-else" }>> = z.object({
+  type: z.enum(["if-else", "element-exists", "text-contains", "url-matches"]),
+  condition: z.string(),
+  selector: z.string().optional(),
+  expectedValue: z.string().optional(),
+  ifBranch: z.array(z.lazy(() => navigationStepSchema as any)),
+  elseBranch: z.array(z.lazy(() => navigationStepSchema as any)).optional(),
+}) as any;
+
+// Switch-case conditional schema
+const switchCaseConditionalSchema: z.ZodType<Extract<ConditionalBranch, { type: "switch-case" }>> = z.object({
+  type: z.literal("switch-case"),
+  condition: z.string(),
+  selector: z.string().optional(),
+  expectedValue: z.string().optional(),
+  cases: z.array(switchCaseSchema),
+  defaultBranch: z.array(z.lazy(() => navigationStepSchema as any)).optional(),
+}) as any;
+
+// Discriminated union for conditional branch schema
+const conditionalBranchSchema: z.ZodType<ConditionalBranch> = z.discriminatedUnion("type", [
+  binaryConditionalSchema as any,
+  switchCaseConditionalSchema as any,
+]) as any;
+
+// Complete navigation step schema with conditional support
+export const navigationStepSchema: z.ZodType<NavigationStep> = baseNavigationStepSchema.extend({
+  conditional: conditionalBranchSchema.optional(),
+}) as any;
 
 // Schema for captured screenshots
 export const screenshotSchema = z.object({
