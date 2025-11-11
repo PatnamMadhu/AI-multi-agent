@@ -8,7 +8,7 @@ import { ImageModal } from "@/components/ImageModal";
 import { MetadataPanel } from "@/components/MetadataPanel";
 import { ErrorDisplay } from "@/components/ErrorDisplay";
 import { Screenshot, WorkflowResponse } from "@shared/schema";
-import { Bot, Zap } from "lucide-react";
+import { Bot, Zap, Database } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -75,9 +75,12 @@ export default function Home() {
 
       // Show appropriate toast based on status
       if (data.status === "success") {
+        const isCacheHit = data.cacheHit === true;
         toast({
-          title: "Success!",
-          description: `Captured ${data.screenshots.length} steps in ${(data.processingDuration / 1000).toFixed(1)}s`,
+          title: isCacheHit ? "Success! (Cached Result)" : "Success!",
+          description: isCacheHit 
+            ? `Retrieved ${data.screenshots.length} cached steps instantly`
+            : `Captured ${data.screenshots.length} steps in ${(data.processingDuration / 1000).toFixed(1)}s`,
         });
       } else if (data.status === "partial") {
         toast({
@@ -203,13 +206,24 @@ export default function Home() {
         )}
 
         {/* Results */}
-        {workflow && !captureWorkflowMutation.isPending && workflow.status !== "failed" && workflow.screenshots && (
+        {workflow && !captureWorkflowMutation.isPending && (workflow.status === "success" || workflow.status === "partial") && workflow.screenshots && (
           <div className="space-y-8">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-2xl font-semibold">Workflow Captured Successfully</h2>
-                <p className="text-muted-foreground mt-1">
-                  {workflow.screenshots.length} steps captured in {(workflow.processingDuration / 1000).toFixed(1)}s
+                <div className="flex items-center gap-3">
+                  <h2 className="text-2xl font-semibold">Workflow Captured Successfully</h2>
+                  {workflow.cacheHit && (
+                    <Badge variant="secondary" className="gap-1.5" data-testid="badge-cache-hit">
+                      <Database className="h-3 w-3" />
+                      <span className="text-xs font-medium">Cached</span>
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-muted-foreground mt-1" data-testid="text-processing-info">
+                  {workflow.cacheHit 
+                    ? `${workflow.screenshots.length} cached steps retrieved instantly`
+                    : `${workflow.screenshots.length} steps captured in ${(workflow.processingDuration / 1000).toFixed(1)}s`
+                  }
                 </p>
               </div>
               <Button onClick={handleNewCapture} variant="outline" data-testid="button-new-capture">
