@@ -20,16 +20,22 @@ export default function Home() {
   const { toast } = useToast();
 
   // Progress state that updates during workflow capture
-  const [progress, setProgress] = useState({
+  type ProgressStep = { label: string; status: "pending" | "in-progress" | "completed" };
+  const [progress, setProgress] = useState<{
+    currentStep: number;
+    totalSteps: number;
+    statusMessage: string;
+    steps: ProgressStep[];
+  }>({
     currentStep: 0,
     totalSteps: 5,
     statusMessage: "Preparing to capture workflow...",
     steps: [
-      { label: "Analyzing task with AI", status: "pending" as const },
-      { label: "Planning navigation steps", status: "pending" as const },
-      { label: "Launching browser automation", status: "pending" as const },
-      { label: "Capturing UI screenshots", status: "pending" as const },
-      { label: "Processing results", status: "pending" as const },
+      { label: "Analyzing task with AI", status: "pending" },
+      { label: "Planning navigation steps", status: "pending" },
+      { label: "Launching browser automation", status: "pending" },
+      { label: "Capturing UI screenshots", status: "pending" },
+      { label: "Processing results", status: "pending" },
     ],
   });
 
@@ -197,7 +203,7 @@ export default function Home() {
         )}
 
         {/* Results */}
-        {workflow && !captureWorkflowMutation.isPending && workflow.status !== "failed" && (
+        {workflow && !captureWorkflowMutation.isPending && workflow.status !== "failed" && workflow.screenshots && (
           <div className="space-y-8">
             <div className="flex items-center justify-between">
               <div>
