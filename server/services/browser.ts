@@ -1,9 +1,12 @@
 import puppeteer, { Browser, Page } from "puppeteer";
 import { NavigationStep, Screenshot, TaskAnalysis } from "@shared/schema";
+import { WaitManager } from "./waitManager";
+import { NavigationError, ElementNotFoundError, isRetryableError } from "./errors";
 
 export class BrowserAutomation {
   private browser: Browser | null = null;
   private page: Page | null = null;
+  private waitManager: WaitManager | null = null;
 
   async initialize(): Promise<void> {
     this.browser = await puppeteer.launch({
@@ -17,6 +20,9 @@ export class BrowserAutomation {
     });
 
     this.page = await this.browser.newPage();
+    
+    // Initialize WaitManager with the page
+    this.waitManager = new WaitManager(this.page);
     
     // Set a reasonable viewport
     await this.page.setViewport({
@@ -45,11 +51,18 @@ export class BrowserAutomation {
     // Navigate to the starting URL first
     if (analysis.startingUrl && analysis.startingUrl !== "about:blank") {
       try {
+        if (this.waitManager) {
+          await this.waitManager.onNavigationStart();
+        }
         await this.page.goto(analysis.startingUrl, {
           waitUntil: "networkidle2",
           timeout: 30000,
         });
-        await this.page.waitForTimeout(1000);
+        if (this.waitManager) {
+          this.waitManager.onNavigationEnd();
+          // Wait for stability after initial navigation
+          await this.waitManager.waitForStability({ timeout: 3000 });
+        }
       } catch (error) {
         console.error("Error navigating to starting URL:", error);
       }
@@ -64,29 +77,32 @@ export class BrowserAutomation {
 
       try {
         await this.executeStep(step);
-        
-        // Wait a bit for UI to settle
-        await this.page.waitForTimeout(1000);
 
-        // Capture screenshot
+        // Capture screenshot (waitForStability already called in executeStep)
         const screenshot = await this.captureScreenshot(step);
         screenshots.push(screenshot);
         
       } catch (error) {
-        console.error(`Error executing step ${step.stepNumber}:`, error);
+        const isRetryable = isRetryableError(error);
+        console.error(
+          `Error executing step ${step.stepNumber} (${isRetryable ? 'retryable' : 'non-retryable'}):`,
+          error
+        );
         
         // Try to capture error state screenshot
         try {
           const errorScreenshot = await this.captureScreenshot({
             ...step,
-            description: `${step.description} (Error occurred)`,
+            description: `${step.description} (Error: ${
+              error instanceof Error ? error.message : String(error)
+            })`,
           });
           screenshots.push(errorScreenshot);
         } catch (screenshotError) {
           console.error("Failed to capture error screenshot:", screenshotError);
         }
         
-        // Continue with next steps despite error
+        // Continue with next steps despite error (partial results)
       }
     }
 
@@ -94,8 +110,8 @@ export class BrowserAutomation {
   }
 
   private async executeStep(step: NavigationStep): Promise<void> {
-    if (!this.page) {
-      throw new Error("Page not initialized");
+    if (!this.page || !this.waitManager) {
+      throw new Error("Page or WaitManager not initialized");
     }
 
     switch (step.action.toLowerCase()) {
@@ -109,38 +125,86 @@ export class BrowserAutomation {
           console.warn(`Navigation step ${step.stepNumber} has about:blank, skipping`);
           break;
         }
-        await this.page.goto(url, {
-          waitUntil: step.waitFor as any || "networkidle2",
-          timeout: 30000,
-        });
+
+        // Navigation failures are non-retryable (state reset)
+        try {
+          await this.waitManager.onNavigationStart();
+          await this.page.goto(url, {
+            waitUntil: step.waitFor as any || "networkidle2",
+            timeout: 30000,
+          });
+          this.waitManager.onNavigationEnd();
+          
+          // Wait for page stability after navigation
+          await this.waitManager.waitForStability({ timeout: 3000 });
+        } catch (error) {
+          throw new NavigationError(
+            url,
+            error instanceof Error ? error.message : String(error),
+            step.stepNumber
+          );
+        }
         break;
 
       case "click":
         if (step.selector) {
-          await this.page.waitForSelector(step.selector, { timeout: 10000 });
-          await this.page.click(step.selector);
+          // Use retries for selector waiting (idempotent)
+          await this.waitManager.waitForSelector(step.selector, { timeout: 10000 });
+          
+          // Click operation with retry
+          await this.waitManager.withRetry(
+            async () => {
+              try {
+                await this.page!.click(step.selector!);
+              } catch (error) {
+                throw new ElementNotFoundError(step.selector!, step.stepNumber);
+              }
+            },
+            { maxRetries: 2, baseDelay: 500 }
+          );
+          
+          // Wait for UI to settle after click
+          await this.waitManager.waitForStability({ timeout: 2000, stabilityDelay: 300 });
         }
         break;
 
       case "type":
         if (step.selector && step.value) {
-          await this.page.waitForSelector(step.selector, { timeout: 10000 });
-          await this.page.type(step.selector, step.value, { delay: 50 });
+          // Wait for input element with retry
+          await this.waitManager.waitForSelector(step.selector, { timeout: 10000 });
+          
+          // Type operation with retry
+          await this.waitManager.withRetry(
+            async () => {
+              try {
+                // Clear existing value first
+                await this.page!.click(step.selector!, { clickCount: 3 });
+                await this.page!.type(step.selector!, step.value!, { delay: 50 });
+              } catch (error) {
+                throw new ElementNotFoundError(step.selector!, step.stepNumber);
+              }
+            },
+            { maxRetries: 2, baseDelay: 500 }
+          );
+          
+          // Wait for any dynamic updates (autocomplete, validation, etc.)
+          await this.waitManager.waitForStability({ timeout: 2000, stabilityDelay: 300 });
         }
         break;
 
       case "wait":
         if (step.selector) {
-          await this.page.waitForSelector(step.selector, { timeout: 15000 });
+          await this.waitManager.waitForSelector(step.selector, { timeout: 15000 });
         } else {
-          await this.page.waitForTimeout(parseInt(step.value || "2000"));
+          const waitTime = parseInt(step.value || "2000");
+          await this.page.waitForTimeout(waitTime);
         }
         break;
 
       case "screenshot":
         // Screenshot will be taken after this step automatically
-        // Just wait a moment for UI to settle
-        await this.page.waitForTimeout(500);
+        // Wait for UI to fully settle
+        await this.waitManager.waitForStability({ timeout: 2000 });
         break;
 
       default:
