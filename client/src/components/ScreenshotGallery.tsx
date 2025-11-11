@@ -5,6 +5,7 @@ import { Screenshot } from "@shared/schema";
 import { Download, ExternalLink, Copy, Check } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { AnnotatedScreenshot } from "@/components/AnnotatedScreenshot";
 
 interface ScreenshotGalleryProps {
   screenshots: Screenshot[];
@@ -89,15 +90,14 @@ export function ScreenshotGallery({
                   "relative rounded-md overflow-hidden border border-border",
                   "cursor-pointer group",
                 )}
-                onClick={() => onImageClick(screenshot)}
                 data-testid={`image-screenshot-${index}`}
               >
-                <img
-                  src={`data:image/png;base64,${screenshot.imageBase64}`}
-                  alt={screenshot.description}
+                <AnnotatedScreenshot
+                  screenshot={screenshot}
                   className="w-full h-auto max-h-96 object-contain bg-muted"
+                  onClick={() => onImageClick(screenshot)}
                 />
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center pointer-events-none">
                   <div className="opacity-0 group-hover:opacity-100 transition-opacity">
                     <div className="bg-background/90 backdrop-blur-sm rounded-full p-3">
                       <ExternalLink className="h-5 w-5" />

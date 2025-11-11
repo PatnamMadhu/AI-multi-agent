@@ -7,6 +7,7 @@ import {
 import { Screenshot } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Download, X } from "lucide-react";
+import { AnnotatedScreenshot } from "@/components/AnnotatedScreenshot";
 
 interface ImageModalProps {
   screenshot: Screenshot | null;
@@ -45,9 +46,8 @@ export function ImageModal({ screenshot, isOpen, onClose }: ImageModalProps) {
           </div>
         </DialogHeader>
         <div className="mt-4">
-          <img
-            src={`data:image/png;base64,${screenshot.imageBase64}`}
-            alt={screenshot.description}
+          <AnnotatedScreenshot
+            screenshot={screenshot}
             className="w-full h-auto rounded-md border border-border"
             data-testid="image-modal-full"
           />
