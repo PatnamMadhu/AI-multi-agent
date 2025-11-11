@@ -3,6 +3,7 @@ import { TaskRequest, WorkflowResponse, TaskAnalysis, Screenshot } from "@shared
 import { analyzeTask } from "./openai";
 import { BrowserAutomation } from "./browser";
 import { VisualDiffDetector } from "./visualDiff";
+import { workflowCache, generateCacheKey } from "./cache";
 
 export class WorkflowOrchestrator {
   async captureWorkflow(
@@ -11,6 +12,28 @@ export class WorkflowOrchestrator {
   ): Promise<WorkflowResponse> {
     const taskId = randomUUID();
     const startTime = Date.now();
+
+    // Check cache first
+    const cacheKey = generateCacheKey(request.question, request.targetUrl);
+    const cachedResult = workflowCache.get(cacheKey);
+    
+    if (cachedResult) {
+      console.log(`[Orchestrator] Cache HIT for: "${request.question}"`);
+      
+      // Deep clone cached result to prevent mutation of cached object
+      // This ensures consumers cannot corrupt the cache by mutating arrays/objects
+      const clonedResult = JSON.parse(JSON.stringify(cachedResult)) as WorkflowResponse;
+      
+      // Update metadata on the cloned result (don't spread - that creates shallow copy!)
+      clonedResult.taskId = taskId;
+      clonedResult.cacheHit = true;
+      clonedResult.processingDuration = Date.now() - startTime;
+      clonedResult.completedAt = new Date().toISOString();
+      
+      return clonedResult;
+    }
+
+    console.log(`[Orchestrator] Cache MISS for: "${request.question}"`);
 
     let analysis: TaskAnalysis | null = null;
     let screenshots: Screenshot[] = [];
@@ -95,7 +118,17 @@ export class WorkflowOrchestrator {
         completedAt: new Date().toISOString(),
         status: screenshots.length > 0 ? "success" : "partial",
         visualDiff: visualDiffMetadata,
+        cacheHit: false,
       };
+
+      // Store successful results in cache (only cache success/partial, not failures)
+      if (response.status === "success" || response.status === "partial") {
+        // Deep clone response before caching to prevent mutation
+        // This ensures the cached copy remains immutable
+        const clonedResponse = JSON.parse(JSON.stringify(response));
+        workflowCache.set(cacheKey, clonedResponse);
+        console.log(`[Orchestrator] Cached result for: "${request.question}"`);
+      }
 
       // Clear detector to free memory
       visualDiffDetector?.clear();

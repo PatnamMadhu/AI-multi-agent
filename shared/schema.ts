@@ -167,6 +167,7 @@ export const workflowResponseSchema = z.object({
   status: z.enum(["success", "partial", "failed"]),
   error: z.string().optional(),
   visualDiff: visualDiffMetadataSchema.optional(),
+  cacheHit: z.boolean().optional(), // Indicates if result came from cache
 });
 
 export type WorkflowResponse = z.infer<typeof workflowResponseSchema>;
