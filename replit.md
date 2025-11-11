@@ -46,10 +46,26 @@ Preferred communication style: Simple, everyday language.
 **Workflow Execution Pattern**:
 The system follows a multi-stage pipeline:
 1. User submits natural language question
-2. GPT-5 analyzes and generates navigation plan with specific actions (navigate, click, type, wait, screenshot)
-3. Puppeteer executes the plan step-by-step
-4. Screenshots captured at specified steps
-5. Results returned with metadata
+2. Cache check: If identical question was recently asked, return cached results instantly
+3. GPT-5 analyzes and generates navigation plan with specific actions (navigate, click, type, wait, screenshot, conditional)
+4. Puppeteer executes the plan step-by-step with support for conditional branching
+5. Screenshots captured at specified steps with element bounding box annotations
+6. Results cached and returned with metadata
+
+**Conditional Branching Support** (Added Nov 2025):
+The system supports multi-step workflows with conditional navigation:
+- **Binary Conditionals**: if-else, element-exists, text-contains, url-matches logic
+- **Switch-Case Conditionals**: Multi-path routing based on page state (3+ branches)
+- **Discriminated Union Schema**: Type-safe conditional branch structures
+- **Shared Evaluator**: `conditionalEvaluator` utility runs in browser context for accurate condition checking
+- **Recursive Execution**: Nested conditionals supported with proper screenshot capture at each branch
+
+**Screenshot Annotations** (Added Nov 2025):
+Each screenshot can include visual annotations showing interacted elements:
+- **Bounding Box Tracking**: Automatically captures element coordinates for click/type actions
+- **Canvas Rendering**: HTML5 Canvas overlays with semi-transparent rectangles and labels
+- **HiDPI Support**: Device pixel ratio handling with transform reset prevents scaling artifacts
+- **Responsive Updates**: ResizeObserver ensures annotations scale correctly on window resize
 
 **Browser Automation**: Puppeteer runs in headless mode with specific arguments for containerized environments (no-sandbox, disable-setuid-sandbox). The browser viewport is set to 1280x720 for consistent screenshots.
 
@@ -59,18 +75,36 @@ The system follows a multi-stage pipeline:
 
 **Database Ready**: Drizzle ORM configured with PostgreSQL schema defined in `shared/schema.ts`, though not currently used for core workflow functionality. The system is prepared to add database persistence with migrations stored in `./migrations`.
 
-**Data Flow**: Request/response cycle is stateless - each workflow capture is independent with no persistent storage of results (results returned directly to client).
+**Data Flow**: Workflows are cached in-memory for performance. Identical questions return cached results instantly. No persistent database storage of workflow results.
+
+**Caching Layer** (Added Nov 2025):
+LRU cache implementation for workflow result optimization:
+- **Cache Service**: `server/services/cache.ts` provides LRUCache<T> with configurable size and TTL
+- **Configuration**: Max 50 entries, 30-minute TTL for workflow results
+- **Key Normalization**: `generateCacheKey(question, targetUrl)` creates consistent cache keys
+- **LRU Eviction**: Least Recently Used eviction when cache is full (O(n) acceptable for size 50)
+- **TTL Expiration**: Automatic cleanup of expired entries before size enforcement prevents deadlock
+- **Deep Cloning**: JSON serialization ensures cache integrity - consumers cannot corrupt cached data
+- **Cache Orchestration**: WorkflowOrchestrator checks cache before execution, stores successful results
+- **UI Indicators**: Frontend displays "Cached" badge with Database icon when results come from cache
 
 ### Schema & Validation
 
 **Validation**: Zod schemas define all data contracts between frontend and backend:
 - `taskRequestSchema` - Validates incoming workflow requests
-- `navigationStepSchema` - Defines structure of AI-generated steps
-- `screenshotSchema` - Captured screenshot metadata
+- `navigationStepSchema` - Defines structure of AI-generated steps with conditional branch support
+- `conditionalBranchSchema` - Discriminated union for if-else and switch-case branches
+- `boundingBoxSchema` - Element annotation coordinates and labels
+- `screenshotSchema` - Captured screenshot metadata with optional annotations array
 - `taskAnalysisSchema` - AI analysis output structure
-- `workflowResponseSchema` - Complete API response format
+- `workflowResponseSchema` - Complete API response format with cacheHit indicator
 
 This ensures type safety across the full stack with shared types generated from schemas.
+
+**Recent Schema Extensions** (Nov 2025):
+- Added `conditional` field to NavigationStep for branching logic
+- Added `annotations` array to Screenshot for bounding box metadata
+- Added `cacheHit` boolean to WorkflowResponse for cache status indication
 
 ### Authentication & Authorization
 
