@@ -40,24 +40,15 @@ export class VisualDiffDetector {
       try {
         const png = PNG.sync.read(imageBuffer);
         
-        // Convert RGBA to grayscale for blockhash
+        // blockhash-core expects RGBA data (4 channels per pixel)
         const { width, height, data } = png;
         const imgData = {
           width,
           height,
-          data: new Uint8Array(width * height),
+          data: new Uint8Array(data), // Use full RGBA data
         };
 
-        // Convert to grayscale
-        for (let i = 0; i < width * height; i++) {
-          const r = data[i * 4];
-          const g = data[i * 4 + 1];
-          const b = data[i * 4 + 2];
-          // Grayscale formula
-          imgData.data[i] = Math.floor(0.299 * r + 0.587 * g + 0.114 * b);
-        }
-
-        // Compute blockhash
+        // Compute blockhash with RGBA data (4 channels)
         const hash = blockhash(imgData, this.HASH_BITS, 2);
 
         resolve({
