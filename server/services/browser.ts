@@ -1,5 +1,5 @@
 import puppeteer, { Browser, Page } from "puppeteer";
-import { NavigationStep, Screenshot, TaskAnalysis } from "@shared/schema";
+import { NavigationStep, Screenshot, TaskAnalysis, BoundingBox } from "@shared/schema";
 import { WaitManager } from "./waitManager";
 import { NavigationError, ElementNotFoundError, isRetryableError } from "./errors";
 import { VisualDiffDetector } from "./visualDiff";
@@ -10,6 +10,7 @@ export class BrowserAutomation {
   private page: Page | null = null;
   private waitManager: WaitManager | null = null;
   private visualDiffDetector: VisualDiffDetector | null = null;
+  private lastBoundingBox: BoundingBox | null = null; // Track last interacted element
 
   constructor(visualDiffDetector?: VisualDiffDetector) {
     this.visualDiffDetector = visualDiffDetector || null;
@@ -202,6 +203,9 @@ export class BrowserAutomation {
           // Use retries for selector waiting (idempotent)
           await this.waitManager.waitForSelector(step.selector, { timeout: 10000 });
           
+          // Capture bounding box before click
+          this.lastBoundingBox = await this.captureBoundingBox(step.selector, "click");
+          
           // Click operation with retry
           await this.waitManager.withRetry(
             async () => {
@@ -223,6 +227,9 @@ export class BrowserAutomation {
         if (step.selector && step.value) {
           // Wait for input element with retry
           await this.waitManager.waitForSelector(step.selector, { timeout: 10000 });
+          
+          // Capture bounding box before typing
+          this.lastBoundingBox = await this.captureBoundingBox(step.selector, "type");
           
           // Type operation with retry
           await this.waitManager.withRetry(
@@ -263,6 +270,42 @@ export class BrowserAutomation {
     }
   }
 
+  /**
+   * Capture the bounding box of an element for annotation
+   */
+  private async captureBoundingBox(
+    selector: string,
+    label: string
+  ): Promise<BoundingBox | null> {
+    if (!this.page) return null;
+
+    try {
+      const boundingBox = await this.page.evaluate((sel) => {
+        const element = document.querySelector(sel);
+        if (!element) return null;
+
+        const rect = element.getBoundingClientRect();
+        return {
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: rect.height,
+        };
+      }, selector);
+
+      if (boundingBox) {
+        return {
+          ...boundingBox,
+          label,
+        };
+      }
+    } catch (error) {
+      console.warn(`Failed to capture bounding box for ${selector}:`, error);
+    }
+
+    return null;
+  }
+
   private async captureScreenshot(step: NavigationStep): Promise<Screenshot | null> {
     if (!this.page) {
       throw new Error("Page not initialized");
@@ -286,6 +329,8 @@ export class BrowserAutomation {
         console.log(
           `Skipping screenshot ${step.stepNumber} - duplicate of step ${duplicateOf}`
         );
+        // Reset bounding box since we're skipping this screenshot
+        this.lastBoundingBox = null;
         return null; // Return null to skip adding to screenshots array
       }
     }
@@ -293,12 +338,19 @@ export class BrowserAutomation {
     const base64Image = screenshotBuffer.toString("base64");
     const url = this.page.url();
 
+    // Include bounding box annotations if captured
+    const annotations = this.lastBoundingBox ? [this.lastBoundingBox] : undefined;
+    
+    // Reset for next screenshot
+    this.lastBoundingBox = null;
+
     return {
       stepNumber: step.stepNumber,
       description: step.description,
       imageBase64: base64Image,
       timestamp: new Date().toISOString(),
       url,
+      annotations,
     };
   }
 

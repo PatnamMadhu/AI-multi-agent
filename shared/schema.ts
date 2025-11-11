@@ -103,6 +103,17 @@ export const navigationStepSchema: z.ZodType<NavigationStep> = baseNavigationSte
   conditional: conditionalBranchSchema.optional(),
 }) as any;
 
+// Schema for bounding box annotation
+export const boundingBoxSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  width: z.number(),
+  height: z.number(),
+  label: z.string().optional(), // e.g., "click", "type", "hover"
+});
+
+export type BoundingBox = z.infer<typeof boundingBoxSchema>;
+
 // Schema for captured screenshots
 export const screenshotSchema = z.object({
   stepNumber: z.number(),
@@ -110,6 +121,7 @@ export const screenshotSchema = z.object({
   imageBase64: z.string(),
   timestamp: z.string(),
   url: z.string().optional(),
+  annotations: z.array(boundingBoxSchema).optional(), // Element annotations
 });
 
 export type Screenshot = z.infer<typeof screenshotSchema>;
