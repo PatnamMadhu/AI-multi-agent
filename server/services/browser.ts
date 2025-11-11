@@ -3,6 +3,7 @@ import { NavigationStep, Screenshot, TaskAnalysis } from "@shared/schema";
 import { WaitManager } from "./waitManager";
 import { NavigationError, ElementNotFoundError, isRetryableError } from "./errors";
 import { VisualDiffDetector } from "./visualDiff";
+import { evaluateConditional } from "./conditionalEvaluator";
 
 export class BrowserAutomation {
   private browser: Browser | null = null;
@@ -82,13 +83,9 @@ export class BrowserAutomation {
       }
 
       try {
-        await this.executeStep(step);
-
-        // Capture screenshot (waitForStability already called in executeStep)
-        const screenshot = await this.captureScreenshot(step);
-        if (screenshot) {
-          screenshots.push(screenshot);
-        }
+        // Execute step and collect any screenshots from branch steps
+        const stepScreenshots = await this.executeStepWithScreenshots(step);
+        screenshots.push(...stepScreenshots);
         
       } catch (error) {
         const isRetryable = isRetryableError(error);
@@ -113,6 +110,50 @@ export class BrowserAutomation {
         }
         
         // Continue with next steps despite error (partial results)
+      }
+    }
+
+    return screenshots;
+  }
+
+  /**
+   * Execute a step and return all screenshots generated (including from branch steps)
+   */
+  private async executeStepWithScreenshots(step: NavigationStep): Promise<Screenshot[]> {
+    const screenshots: Screenshot[] = [];
+
+    // Guard against missing action
+    if (!step.action) {
+      console.warn(`[Step ${step.stepNumber}] Missing action, skipping`);
+      return screenshots;
+    }
+
+    // For conditional steps, execute branch steps and collect their screenshots
+    if (step.action.toLowerCase() === "conditional") {
+      if (!this.page) {
+        throw new Error("Page not initialized - cannot evaluate conditional");
+      }
+      
+      if (step.conditional) {
+        console.log(`[Step ${step.stepNumber}] Evaluating conditional: ${step.description}`);
+        const branchSteps = await evaluateConditional(step.conditional, this.page);
+        
+        // Recursively execute and capture screenshots for each branch step
+        for (const branchStep of branchSteps) {
+          const branchScreenshots = await this.executeStepWithScreenshots(branchStep);
+          screenshots.push(...branchScreenshots);
+        }
+      } else {
+        console.warn(`[Step ${step.stepNumber}] Conditional step missing conditional field`);
+      }
+    } else {
+      // Execute regular step
+      await this.executeStep(step);
+
+      // Capture screenshot for this step
+      const screenshot = await this.captureScreenshot(step);
+      if (screenshot) {
+        screenshots.push(screenshot);
       }
     }
 
@@ -227,16 +268,17 @@ export class BrowserAutomation {
       throw new Error("Page not initialized");
     }
 
+    // screenshot() returns Buffer by default (no encoding specified)
     const screenshotBuffer = await this.page.screenshot({
       type: "png",
       fullPage: false,
-    });
+    }) as Buffer;
 
     // Check for duplicates using visual diff detector
     if (this.visualDiffDetector) {
       const duplicateOf = await this.visualDiffDetector.isDuplicate(
         step.stepNumber,
-        Buffer.from(screenshotBuffer)
+        screenshotBuffer
       );
 
       if (duplicateOf !== null) {

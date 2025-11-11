@@ -1,105 +1,10 @@
 import { randomUUID } from "crypto";
-import { TaskRequest, WorkflowResponse, TaskAnalysis, Screenshot, NavigationStep, ConditionalBranch } from "@shared/schema";
+import { TaskRequest, WorkflowResponse, TaskAnalysis, Screenshot } from "@shared/schema";
 import { analyzeTask } from "./openai";
 import { BrowserAutomation } from "./browser";
 import { VisualDiffDetector } from "./visualDiff";
-import { Page } from "puppeteer";
 
 export class WorkflowOrchestrator {
-  /**
-   * Evaluate a conditional branch and return the steps to execute
-   */
-  async evaluateConditional(
-    conditional: ConditionalBranch,
-    page: Page
-  ): Promise<NavigationStep[]> {
-    try {
-      const { type, selector, expectedValue } = conditional;
-
-      // Determine which branch to take based on condition type
-      let conditionMet = false;
-
-      switch (type) {
-        case "element-exists":
-          // Check if element exists on the page
-          if (selector) {
-            conditionMet = await page.$(selector) !== null;
-          }
-          break;
-
-        case "text-contains":
-          // Check if element contains expected text
-          if (selector && expectedValue) {
-            const element = await page.$(selector);
-            if (element) {
-              const text = await element.evaluate((el) => el.textContent || "");
-              conditionMet = text.includes(expectedValue);
-            }
-          }
-          break;
-
-        case "url-matches":
-          // Check if current URL matches expected pattern
-          if (expectedValue) {
-            const currentUrl = page.url();
-            conditionMet = currentUrl.includes(expectedValue);
-          }
-          break;
-
-        case "if-else":
-          // Generic if-else based on element existence (fallback to element-exists behavior)
-          if (selector) {
-            conditionMet = await page.$(selector) !== null;
-          }
-          break;
-
-        case "switch-case":
-          // For switch-case, get the value from selector and match against cases
-          if (selector && conditional.cases) {
-            const element = await page.$(selector);
-            if (element) {
-              const value = await element.evaluate((el) => {
-                // Try to get value from different attributes
-                if (el instanceof HTMLInputElement) return el.value;
-                if (el.hasAttribute("data-value")) return el.getAttribute("data-value");
-                if (el.hasAttribute("value")) return el.getAttribute("value");
-                return el.textContent?.trim() || "";
-              });
-
-              // Find matching case
-              const matchedCase = conditional.cases.find(
-                (c) => c.matchValue === value
-              );
-
-              if (matchedCase) {
-                return matchedCase.steps;
-              }
-            }
-
-            // Return default branch if no case matched
-            return conditional.defaultBranch || [];
-          }
-          break;
-      }
-
-      // For binary conditionals, return appropriate branch
-      if (type !== "switch-case") {
-        if (conditionMet) {
-          return conditional.ifBranch;
-        } else {
-          return conditional.elseBranch || [];
-        }
-      }
-
-      return [];
-    } catch (error) {
-      console.error("Error evaluating conditional:", error);
-      // On error, return else branch or empty array
-      return conditional.type !== "switch-case" 
-        ? (conditional.elseBranch || [])
-        : (conditional.defaultBranch || []);
-    }
-  }
   async captureWorkflow(
     request: TaskRequest,
     progressCallback?: (step: number, total: number, message: string) => void
