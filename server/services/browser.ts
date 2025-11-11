@@ -2,11 +2,17 @@ import puppeteer, { Browser, Page } from "puppeteer";
 import { NavigationStep, Screenshot, TaskAnalysis } from "@shared/schema";
 import { WaitManager } from "./waitManager";
 import { NavigationError, ElementNotFoundError, isRetryableError } from "./errors";
+import { VisualDiffDetector } from "./visualDiff";
 
 export class BrowserAutomation {
   private browser: Browser | null = null;
   private page: Page | null = null;
   private waitManager: WaitManager | null = null;
+  private visualDiffDetector: VisualDiffDetector | null = null;
+
+  constructor(visualDiffDetector?: VisualDiffDetector) {
+    this.visualDiffDetector = visualDiffDetector || null;
+  }
 
   async initialize(): Promise<void> {
     this.browser = await puppeteer.launch({
@@ -80,7 +86,9 @@ export class BrowserAutomation {
 
         // Capture screenshot (waitForStability already called in executeStep)
         const screenshot = await this.captureScreenshot(step);
-        screenshots.push(screenshot);
+        if (screenshot) {
+          screenshots.push(screenshot);
+        }
         
       } catch (error) {
         const isRetryable = isRetryableError(error);
@@ -97,7 +105,9 @@ export class BrowserAutomation {
               error instanceof Error ? error.message : String(error)
             })`,
           });
-          screenshots.push(errorScreenshot);
+          if (errorScreenshot) {
+            screenshots.push(errorScreenshot);
+          }
         } catch (screenshotError) {
           console.error("Failed to capture error screenshot:", screenshotError);
         }
@@ -197,7 +207,7 @@ export class BrowserAutomation {
           await this.waitManager.waitForSelector(step.selector, { timeout: 15000 });
         } else {
           const waitTime = parseInt(step.value || "2000");
-          await this.page.waitForTimeout(waitTime);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
         }
         break;
 
@@ -212,7 +222,7 @@ export class BrowserAutomation {
     }
   }
 
-  private async captureScreenshot(step: NavigationStep): Promise<Screenshot> {
+  private async captureScreenshot(step: NavigationStep): Promise<Screenshot | null> {
     if (!this.page) {
       throw new Error("Page not initialized");
     }
@@ -221,6 +231,22 @@ export class BrowserAutomation {
       type: "png",
       fullPage: false,
     });
+
+    // Check for duplicates using visual diff detector
+    if (this.visualDiffDetector) {
+      const duplicateOf = await this.visualDiffDetector.isDuplicate(
+        step.stepNumber,
+        Buffer.from(screenshotBuffer)
+      );
+
+      if (duplicateOf !== null) {
+        // Skip this screenshot - it's a duplicate
+        console.log(
+          `Skipping screenshot ${step.stepNumber} - duplicate of step ${duplicateOf}`
+        );
+        return null; // Return null to skip adding to screenshots array
+      }
+    }
 
     const base64Image = screenshotBuffer.toString("base64");
     const url = this.page.url();

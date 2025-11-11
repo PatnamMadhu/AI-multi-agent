@@ -1,5 +1,13 @@
 import { z } from "zod";
 
+// Schema for visual diff configuration
+export const visualDiffConfigSchema = z.object({
+  disabled: z.boolean().optional(),
+  similarityThreshold: z.number().min(0).max(1).optional(),
+}).optional();
+
+export type VisualDiffConfig = z.infer<typeof visualDiffConfigSchema>;
+
 // Schema for capturing workflow tasks
 export const taskRequestSchema = z.object({
   question: z.string().min(1, "Question is required"),
@@ -10,6 +18,7 @@ export const taskRequestSchema = z.object({
     domain: z.string().optional(),
     path: z.string().optional(),
   })).optional(),
+  visualDiff: visualDiffConfigSchema,
 });
 
 export type TaskRequest = z.infer<typeof taskRequestSchema>;
@@ -47,6 +56,26 @@ export const taskAnalysisSchema = z.object({
 
 export type TaskAnalysis = z.infer<typeof taskAnalysisSchema>;
 
+// Schema for duplicate detection metadata
+export const duplicateInfoSchema = z.object({
+  stepNumber: z.number(),
+  originalStepNumber: z.number(),
+  similarity: z.number(),
+  reason: z.string(),
+});
+
+export type DuplicateInfo = z.infer<typeof duplicateInfoSchema>;
+
+// Schema for visual diff metadata in response
+export const visualDiffMetadataSchema = z.object({
+  duplicates: z.array(duplicateInfoSchema),
+  totalScreenshots: z.number(),
+  uniqueScreenshots: z.number(),
+  duplicatesSkipped: z.number(),
+});
+
+export type VisualDiffMetadata = z.infer<typeof visualDiffMetadataSchema>;
+
 // Schema for the complete workflow response
 export const workflowResponseSchema = z.object({
   taskId: z.string(),
@@ -57,6 +86,7 @@ export const workflowResponseSchema = z.object({
   completedAt: z.string(),
   status: z.enum(["success", "partial", "failed"]),
   error: z.string().optional(),
+  visualDiff: visualDiffMetadataSchema.optional(),
 });
 
 export type WorkflowResponse = z.infer<typeof workflowResponseSchema>;

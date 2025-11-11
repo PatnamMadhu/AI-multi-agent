@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { TaskRequest, WorkflowResponse, TaskAnalysis, Screenshot } from "@shared/schema";
 import { analyzeTask } from "./openai";
 import { BrowserAutomation } from "./browser";
+import { VisualDiffDetector } from "./visualDiff";
 
 export class WorkflowOrchestrator {
   async captureWorkflow(
@@ -14,6 +15,7 @@ export class WorkflowOrchestrator {
     let analysis: TaskAnalysis | null = null;
     let screenshots: Screenshot[] = [];
     let browser: BrowserAutomation | null = null;
+    let visualDiffDetector: VisualDiffDetector | null = null;
 
     try {
       // Step 1: Analyze the task with AI
@@ -28,12 +30,18 @@ export class WorkflowOrchestrator {
         analysis.startingUrl = request.targetUrl;
       }
 
-      // Step 2: Initialize browser
+      // Step 2: Initialize visual diff detector and browser
       if (progressCallback) {
         progressCallback(2, 5, "Initializing browser automation...");
       }
 
-      browser = new BrowserAutomation();
+      // Create visual diff detector with configuration from request
+      visualDiffDetector = new VisualDiffDetector({
+        enabled: !request.visualDiff?.disabled,
+        similarityThreshold: request.visualDiff?.similarityThreshold,
+      });
+
+      browser = new BrowserAutomation(visualDiffDetector);
       await browser.initialize();
 
       // Set cookies if provided
@@ -67,6 +75,17 @@ export class WorkflowOrchestrator {
         progressCallback(5, 5, "Workflow capture complete!");
       }
 
+      // Collect visual diff metadata
+      const duplicates = visualDiffDetector?.getDuplicates() || [];
+      const visualDiffMetadata = visualDiffDetector
+        ? {
+            duplicates,
+            totalScreenshots: analysis.navigationPlan.length,
+            uniqueScreenshots: screenshots.length,
+            duplicatesSkipped: duplicates.length,
+          }
+        : undefined;
+
       const response: WorkflowResponse = {
         taskId,
         question: request.question,
@@ -75,7 +94,11 @@ export class WorkflowOrchestrator {
         processingDuration,
         completedAt: new Date().toISOString(),
         status: screenshots.length > 0 ? "success" : "partial",
+        visualDiff: visualDiffMetadata,
       };
+
+      // Clear detector to free memory
+      visualDiffDetector?.clear();
 
       return response;
 
