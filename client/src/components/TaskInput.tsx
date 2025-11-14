@@ -6,9 +6,17 @@ import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Sparkles, Shield } from "lucide-react";
 import { AuthPreference } from "@shared/schema";
+import { CookieImport } from "./CookieImport";
+
+interface CookieData {
+  name: string;
+  value: string;
+  domain?: string;
+  path?: string;
+}
 
 interface TaskInputProps {
-  onSubmit: (question: string, authPreference: AuthPreference) => void;
+  onSubmit: (question: string, authPreference: AuthPreference, cookies?: CookieData[]) => void;
   isLoading: boolean;
 }
 
@@ -22,13 +30,14 @@ const exampleQuestions = [
 export function TaskInput({ onSubmit, isLoading }: TaskInputProps) {
   const [question, setQuestion] = useState("");
   const [authPreference, setAuthPreference] = useState<AuthPreference>("auto-detect");
+  const [cookies, setCookies] = useState<CookieData[]>([]);
   const charCount = question.length;
   const maxChars = 500;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (question.trim() && !isLoading) {
-      onSubmit(question.trim(), authPreference);
+      onSubmit(question.trim(), authPreference, cookies.length > 0 ? cookies : undefined);
     }
   };
 
@@ -102,7 +111,7 @@ export function TaskInput({ onSubmit, isLoading }: TaskInputProps) {
                 I'm already logged in
               </Label>
               <p className="text-sm text-muted-foreground">
-                Skip authentication checks and proceed with the main task
+                Use your existing browser session cookies to access logged-in content
               </p>
             </div>
           </div>
@@ -129,6 +138,10 @@ export function TaskInput({ onSubmit, isLoading }: TaskInputProps) {
             </div>
           </div>
         </RadioGroup>
+
+        {authPreference === "already-logged-in" && (
+          <CookieImport onCookiesChange={setCookies} disabled={isLoading} />
+        )}
       </div>
 
       <div className="space-y-3">

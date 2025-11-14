@@ -44,7 +44,15 @@ export default function Home() {
   });
 
   const captureWorkflowMutation = useMutation({
-    mutationFn: async ({ question, authPreference }: { question: string; authPreference: string }) => {
+    mutationFn: async ({ 
+      question, 
+      authPreference,
+      cookies,
+    }: { 
+      question: string; 
+      authPreference: string;
+      cookies?: Array<{ name: string; value: string; domain?: string; path?: string }>;
+    }) => {
       // Update progress to show we're starting
       setProgress((prev) => ({
         ...prev,
@@ -62,6 +70,7 @@ export default function Home() {
         {
           question,
           authPreference,
+          cookies,
         },
       );
 
@@ -128,9 +137,13 @@ export default function Home() {
     },
   });
 
-  const handleTaskSubmit = async (question: string, authPreference: string) => {
+  const handleTaskSubmit = async (
+    question: string, 
+    authPreference: string,
+    cookies?: Array<{ name: string; value: string; domain?: string; path?: string }>
+  ) => {
     setWorkflow(null);
-    captureWorkflowMutation.mutate({ question, authPreference });
+    captureWorkflowMutation.mutate({ question, authPreference, cookies });
   };
 
   const handleImageClick = (screenshot: Screenshot) => {
