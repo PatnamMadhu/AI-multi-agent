@@ -3,10 +3,12 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Sparkles } from "lucide-react";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Sparkles, Shield } from "lucide-react";
+import { AuthPreference } from "@shared/schema";
 
 interface TaskInputProps {
-  onSubmit: (question: string) => void;
+  onSubmit: (question: string, authPreference: AuthPreference) => void;
   isLoading: boolean;
 }
 
@@ -19,13 +21,14 @@ const exampleQuestions = [
 
 export function TaskInput({ onSubmit, isLoading }: TaskInputProps) {
   const [question, setQuestion] = useState("");
+  const [authPreference, setAuthPreference] = useState<AuthPreference>("auto-detect");
   const charCount = question.length;
   const maxChars = 500;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (question.trim() && !isLoading) {
-      onSubmit(question.trim());
+      onSubmit(question.trim(), authPreference);
     }
   };
 
@@ -65,6 +68,67 @@ export function TaskInput({ onSubmit, isLoading }: TaskInputProps) {
             {charCount}/{maxChars}
           </p>
         </div>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Shield className="h-4 w-4 text-muted-foreground" />
+          <Label className="text-base font-semibold">Authentication</Label>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          How should the system handle login requirements?
+        </p>
+        <RadioGroup
+          value={authPreference}
+          onValueChange={(value) => setAuthPreference(value as AuthPreference)}
+          disabled={isLoading}
+          className="space-y-3"
+        >
+          <div className="flex items-start gap-3">
+            <RadioGroupItem value="auto-detect" id="auth-auto" data-testid="radio-auth-auto" className="mt-0.5" />
+            <div className="flex-1">
+              <Label htmlFor="auth-auto" className="font-medium cursor-pointer">
+                Auto-detect (Recommended)
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                Automatically checks login state and documents both scenarios
+              </p>
+            </div>
+          </div>
+          <div className="flex items-start gap-3">
+            <RadioGroupItem value="already-logged-in" id="auth-logged-in" data-testid="radio-auth-logged-in" className="mt-0.5" />
+            <div className="flex-1">
+              <Label htmlFor="auth-logged-in" className="font-medium cursor-pointer">
+                I'm already logged in
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                Skip authentication checks and proceed with the main task
+              </p>
+            </div>
+          </div>
+          <div className="flex items-start gap-3">
+            <RadioGroupItem value="need-sign-in" id="auth-sign-in" data-testid="radio-auth-sign-in" className="mt-0.5" />
+            <div className="flex-1">
+              <Label htmlFor="auth-sign-in" className="font-medium cursor-pointer">
+                I need to sign in
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                Focus on documenting the sign-in process
+              </p>
+            </div>
+          </div>
+          <div className="flex items-start gap-3">
+            <RadioGroupItem value="need-sign-up" id="auth-sign-up" data-testid="radio-auth-sign-up" className="mt-0.5" />
+            <div className="flex-1">
+              <Label htmlFor="auth-sign-up" className="font-medium cursor-pointer">
+                I need to sign up
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                Focus on documenting the sign-up process
+              </p>
+            </div>
+          </div>
+        </RadioGroup>
       </div>
 
       <div className="space-y-3">

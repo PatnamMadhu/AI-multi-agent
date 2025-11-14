@@ -13,8 +13,8 @@ export class WorkflowOrchestrator {
     const taskId = randomUUID();
     const startTime = Date.now();
 
-    // Check cache first
-    const cacheKey = generateCacheKey(request.question, request.targetUrl);
+    // Check cache first - cache key includes all request parameters
+    const cacheKey = generateCacheKey(request);
     const cachedResult = workflowCache.get(cacheKey);
     
     if (cachedResult) {
@@ -46,7 +46,7 @@ export class WorkflowOrchestrator {
         progressCallback(1, 5, "Analyzing task with AI...");
       }
 
-      analysis = await analyzeTask(request.question);
+      analysis = await analyzeTask(request.question, request.authPreference);
       
       // Use targetUrl from request as fallback if AI didn't provide a valid URL
       if (request.targetUrl && (!analysis.startingUrl || analysis.startingUrl === "about:blank")) {

@@ -1,4 +1,5 @@
-import { WorkflowResponse } from "@shared/schema";
+import { WorkflowResponse, TaskRequest } from "@shared/schema";
+import { createHash } from "crypto";
 
 interface CacheEntry<T> {
   value: T;
@@ -186,11 +187,29 @@ export const workflowCache = new LRUCache<WorkflowResponse>({
 });
 
 /**
- * Generate a normalized cache key from question and optional target URL
+ * Generate a normalized cache key from request parameters
+ * Includes question, targetUrl, authPreference, and cookies to ensure proper cache isolation
  */
-export function generateCacheKey(question: string, targetUrl?: string): string {
-  const normalizedQuestion = question.trim().toLowerCase();
-  const normalizedUrl = targetUrl?.trim().toLowerCase() || "";
+export function generateCacheKey(request: TaskRequest): string {
+  const normalizedQuestion = request.question.trim().toLowerCase();
+  const normalizedUrl = request.targetUrl?.trim().toLowerCase() || "";
+  const normalizedAuth = request.authPreference?.trim().toLowerCase() || "auto-detect";
   
-  return `${normalizedQuestion}|${normalizedUrl}`;
+  // Hash cookies to create a stable fingerprint for unique session state
+  let cookieHash = "no-cookies";
+  if (request.cookies && request.cookies.length > 0) {
+    // Include all cookie properties including values to ensure unique sessions don't share cache
+    const cookieData = JSON.stringify(
+      request.cookies.map(c => ({
+        name: c.name,
+        value: c.value, // Include value to differentiate sessions
+        domain: c.domain,
+        path: c.path,
+      })).sort((a, b) => a.name.localeCompare(b.name))
+    );
+    // Use SHA-256 hash to create a stable, privacy-preserving fingerprint
+    cookieHash = createHash("sha256").update(cookieData).digest("hex").substring(0, 16);
+  }
+  
+  return `${normalizedQuestion}|${normalizedUrl}|${normalizedAuth}|${cookieHash}`;
 }
