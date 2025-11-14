@@ -44,7 +44,7 @@ export default function Home() {
   });
 
   const captureWorkflowMutation = useMutation({
-    mutationFn: async (question: string) => {
+    mutationFn: async ({ question, authPreference }: { question: string; authPreference: string }) => {
       // Update progress to show we're starting
       setProgress((prev) => ({
         ...prev,
@@ -61,11 +61,11 @@ export default function Home() {
         "/api/capture-workflow",
         {
           question,
+          authPreference,
         },
       );
 
       return result;
-      console.log("result", result);
     },
     onSuccess: (data) => {
       // Always set workflow so we can display results or errors
@@ -128,9 +128,9 @@ export default function Home() {
     },
   });
 
-  const handleTaskSubmit = async (question: string) => {
+  const handleTaskSubmit = async (question: string, authPreference: string) => {
     setWorkflow(null);
-    captureWorkflowMutation.mutate(question);
+    captureWorkflowMutation.mutate({ question, authPreference });
   };
 
   const handleImageClick = (screenshot: Screenshot) => {
