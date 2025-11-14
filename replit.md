@@ -61,13 +61,18 @@ The system supports multi-step workflows with conditional navigation:
 - **Recursive Execution**: Nested conditionals supported with proper screenshot capture at each branch
 
 **Authentication Flow Handling** (Enhanced Nov 2025):
-The system gracefully handles authentication requirements:
-- **Auto-Detection**: Always checks for logged-in state first before attempting main task
-- **Dual-Path Documentation**: Captures workflow for BOTH logged-in and logged-out states
+The system provides flexible authentication handling with manual user control:
+- **Manual Authentication Selection**: Users can choose their authentication state via radio buttons:
+  - `Auto-detect` (default): Checks login state and documents both logged-in/logged-out scenarios
+  - `Already logged in`: Skips all auth checks, proceeds directly with main task
+  - `Need to sign in`: Focuses on documenting the sign-in workflow in detail
+  - `Need to sign up`: Focuses on documenting the sign-up/registration workflow
+- **Dual-Path Documentation**: Auto-detect mode captures workflows for BOTH logged-in and logged-out states
 - **Login Form Documentation**: Takes screenshots showing where users enter credentials
 - **Non-Intrusive**: Uses placeholder descriptions like "[User will enter email]" without interrupting flow
 - **Conditional Routing**: If already logged in, skips to main task; if not, documents login process
 - **Visual Guidance**: Screenshots show login forms, sign-up options, and authentication steps
+- **Cache Isolation**: Different auth preferences maintain separate cache entries to ensure correct behavior
 
 **Screenshot Annotations** (Added Nov 2025):
 Each screenshot can include visual annotations showing interacted elements:
@@ -90,7 +95,12 @@ Each screenshot can include visual annotations showing interacted elements:
 LRU cache implementation for workflow result optimization:
 - **Cache Service**: `server/services/cache.ts` provides LRUCache<T> with configurable size and TTL
 - **Configuration**: Max 50 entries, 30-minute TTL for workflow results
-- **Key Normalization**: `generateCacheKey(question, targetUrl)` creates consistent cache keys
+- **Key Composition**: `generateCacheKey(request)` creates unique cache keys from:
+  - Normalized question (lowercase, trimmed)
+  - Normalized target URL (lowercase, trimmed)
+  - Normalized auth preference (lowercase, defaults to "auto-detect")
+  - Cookie hash (SHA-256 of complete cookie data including values for session isolation)
+- **Cache Isolation**: Different auth preferences and cookie states maintain separate cache entries
 - **LRU Eviction**: Least Recently Used eviction when cache is full (O(n) acceptable for size 50)
 - **TTL Expiration**: Automatic cleanup of expired entries before size enforcement prevents deadlock
 - **Deep Cloning**: JSON serialization ensures cache integrity - consumers cannot corrupt cached data
@@ -114,6 +124,8 @@ This ensures type safety across the full stack with shared types generated from 
 - Added `conditional` field to NavigationStep for branching logic
 - Added `annotations` array to Screenshot for bounding box metadata
 - Added `cacheHit` boolean to WorkflowResponse for cache status indication
+- Added `authPreference` enum and optional field to TaskRequest for manual authentication control
+- Added `AuthPreference` type with values: "auto-detect", "already-logged-in", "need-sign-in", "need-sign-up"
 
 ### Authentication & Authorization
 
