@@ -31,13 +31,26 @@ export function TaskInput({ onSubmit, isLoading }: TaskInputProps) {
   const [question, setQuestion] = useState("");
   const [authPreference, setAuthPreference] = useState<AuthPreference>("auto-detect");
   const [cookies, setCookies] = useState<CookieData[]>([]);
+  const [cookieImportKey, setCookieImportKey] = useState(0);
   const charCount = question.length;
   const maxChars = 500;
+
+  const handleAuthPreferenceChange = (value: AuthPreference) => {
+    setAuthPreference(value);
+    // Clear cookies and reset CookieImport component when switching away from "already-logged-in" mode
+    if (value !== "already-logged-in") {
+      setCookies([]);
+      // Increment key to force CookieImport to remount with fresh state next time
+      setCookieImportKey(prev => prev + 1);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (question.trim() && !isLoading) {
-      onSubmit(question.trim(), authPreference, cookies.length > 0 ? cookies : undefined);
+      // Only send cookies if in "already-logged-in" mode
+      const cookiesToSend = authPreference === "already-logged-in" && cookies.length > 0 ? cookies : undefined;
+      onSubmit(question.trim(), authPreference, cookiesToSend);
     }
   };
 
@@ -89,7 +102,7 @@ export function TaskInput({ onSubmit, isLoading }: TaskInputProps) {
         </p>
         <RadioGroup
           value={authPreference}
-          onValueChange={(value) => setAuthPreference(value as AuthPreference)}
+          onValueChange={(value) => handleAuthPreferenceChange(value as AuthPreference)}
           disabled={isLoading}
           className="space-y-3"
         >
@@ -140,7 +153,11 @@ export function TaskInput({ onSubmit, isLoading }: TaskInputProps) {
         </RadioGroup>
 
         {authPreference === "already-logged-in" && (
-          <CookieImport onCookiesChange={setCookies} disabled={isLoading} />
+          <CookieImport 
+            key={`cookie-import-${cookieImportKey}`}
+            onCookiesChange={setCookies} 
+            disabled={isLoading} 
+          />
         )}
       </div>
 

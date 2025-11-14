@@ -64,15 +64,21 @@ The system supports multi-step workflows with conditional navigation:
 The system provides flexible authentication handling with manual user control:
 - **Manual Authentication Selection**: Users can choose their authentication state via radio buttons:
   - `Auto-detect` (default): Checks login state and documents both logged-in/logged-out scenarios
-  - `Already logged in`: Skips all auth checks, proceeds directly with main task
+  - `Already logged in`: Skips all auth checks, proceeds directly with main task using imported cookies
   - `Need to sign in`: Focuses on documenting the sign-in workflow in detail
   - `Need to sign up`: Focuses on documenting the sign-up/registration workflow
+- **Cookie Import Feature** (Nov 2025): When "Already logged in" is selected:
+  - Collapsible UI allows users to paste browser cookies exported from extensions
+  - Supports two formats: JSON array `[{"name":"...","value":"..."}]` and cookie format `name=value; domain=...; path=...`
+  - Validates and parses cookies with clear error messages
+  - Component state automatically resets when switching auth modes (prevents data leaks)
+  - Cookies are only transmitted to backend when in "already-logged-in" mode
 - **Dual-Path Documentation**: Auto-detect mode captures workflows for BOTH logged-in and logged-out states
 - **Login Form Documentation**: Takes screenshots showing where users enter credentials
 - **Non-Intrusive**: Uses placeholder descriptions like "[User will enter email]" without interrupting flow
 - **Conditional Routing**: If already logged in, skips to main task; if not, documents login process
 - **Visual Guidance**: Screenshots show login forms, sign-up options, and authentication steps
-- **Cache Isolation**: Different auth preferences maintain separate cache entries to ensure correct behavior
+- **Cache Isolation**: Different auth preferences and cookie states maintain separate cache entries to ensure correct behavior
 
 **Screenshot Annotations** (Added Nov 2025):
 Each screenshot can include visual annotations showing interacted elements:
