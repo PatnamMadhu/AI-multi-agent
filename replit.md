@@ -60,6 +60,15 @@ The system supports multi-step workflows with conditional navigation:
 - **Shared Evaluator**: `conditionalEvaluator` utility runs in browser context for accurate condition checking
 - **Recursive Execution**: Nested conditionals supported with proper screenshot capture at each branch
 
+**Authentication Flow Handling** (Enhanced Nov 2025):
+The system gracefully handles authentication requirements:
+- **Auto-Detection**: Always checks for logged-in state first before attempting main task
+- **Dual-Path Documentation**: Captures workflow for BOTH logged-in and logged-out states
+- **Login Form Documentation**: Takes screenshots showing where users enter credentials
+- **Non-Intrusive**: Uses placeholder descriptions like "[User will enter email]" without interrupting flow
+- **Conditional Routing**: If already logged in, skips to main task; if not, documents login process
+- **Visual Guidance**: Screenshots show login forms, sign-up options, and authentication steps
+
 **Screenshot Annotations** (Added Nov 2025):
 Each screenshot can include visual annotations showing interacted elements:
 - **Bounding Box Tracking**: Automatically captures element coordinates for click/type actions
@@ -115,9 +124,10 @@ This ensures type safety across the full stack with shared types generated from 
 ### External Dependencies
 
 **AI Service**: 
-- OpenAI API (GPT-5 model) for natural language task analysis
+- OpenAI API (GPT-4.1-mini model) for natural language task analysis
 - Requires `OPENAI_API_KEY` environment variable
 - The AI generates structured navigation plans from freeform questions
+- Enhanced with authentication detection and dual-state workflow documentation
 
 **Database**:
 - PostgreSQL via Neon serverless driver (`@neondatabase/serverless`)

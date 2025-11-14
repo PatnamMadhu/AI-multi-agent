@@ -45,8 +45,74 @@ export async function analyzeTask(question: string): Promise<TaskAnalysis> {
           - waitFor
           - conditional (optional)
 
-          CONDITIONAL EXAMPLES:
-          (Binary and switch-case examples unchanged — keep them as you have.)
+          AUTHENTICATION HANDLING:
+          - ALWAYS check for authentication state first before attempting the main task
+          - Use element-exists to detect if user is logged in (check for logout button, profile icon, or other logged-in indicators)
+          - If login is required, include conditional branching that:
+            1. Checks if user is already logged in
+            2. If not logged in: Take screenshots showing the login form and document the login process
+            3. If logged in: Continue with the main task
+          - IMPORTANT: Document the workflow for BOTH logged-in and logged-out states
+          - For login forms: Use placeholder text like "[User will enter email]" or "[User will enter password]" in descriptions
+
+          CONDITIONAL BRANCHING:
+          Use conditional steps when the workflow may differ based on page state. There are two types:
+
+          1. BINARY CONDITIONALS (element-exists, text-contains, url-matches, if-else):
+             Use when there are two possible paths. The "ifBranch" is REQUIRED, "elseBranch" is optional.
+             
+             Example - Authentication check:
+             {
+               "stepNumber": 1,
+               "action": "conditional",
+               "description": "Check if user is already logged in",
+               "conditional": {
+                 "type": "element-exists",
+                 "condition": "Check for logged-in state",
+                 "selector": "button[aria-label='Profile'], a[href='/logout'], img[alt='Profile']",
+                 "ifBranch": [
+                   {"stepNumber": 1.1, "action": "screenshot", "description": "User is logged in - capture dashboard", "selector": "", "value": "", "waitFor": ""},
+                   {"stepNumber": 1.2, "action": "click", "description": "Proceed with main task", "selector": "button[data-testid='new-item']", "value": "", "waitFor": ""}
+                 ],
+                 "elseBranch": [
+                   {"stepNumber": 1.3, "action": "screenshot", "description": "Login form displayed - user needs to log in", "selector": "", "value": "", "waitFor": ""},
+                   {"stepNumber": 1.4, "action": "click", "description": "Click login button (user will need to enter credentials)", "selector": "button[data-testid='login-button']", "value": "", "waitFor": ""},
+                   {"stepNumber": 1.5, "action": "screenshot", "description": "Show where user enters email and password", "selector": "", "value": "", "waitFor": ""}
+                 ]
+               }
+             }
+
+          2. SWITCH-CASE CONDITIONALS:
+             Use when there are 3+ possible paths based on different values. The "cases" array is REQUIRED, "defaultBranch" is optional.
+             
+             Example - Multiple states:
+             {
+               "stepNumber": 2,
+               "action": "conditional",
+               "description": "Route based on account type",
+               "conditional": {
+                 "type": "switch-case",
+                 "condition": "Determine account type from page",
+                 "selector": "[data-account-type]",
+                 "cases": [
+                   {
+                     "matchValue": "premium",
+                     "steps": [
+                       {"stepNumber": 2.1, "action": "click", "description": "Access premium features", "selector": "#premium-panel", "value": "", "waitFor": ""}
+                     ]
+                   },
+                   {
+                     "matchValue": "basic",
+                     "steps": [
+                       {"stepNumber": 2.2, "action": "click", "description": "Access basic features", "selector": "#basic-panel", "value": "", "waitFor": ""}
+                     ]
+                   }
+                 ],
+                 "defaultBranch": [
+                   {"stepNumber": 2.3, "action": "screenshot", "description": "Unknown account type", "selector": "", "value": "", "waitFor": ""}
+                 ]
+               }
+             }
 
           Respond ONLY with valid JSON in this exact structure:
           {
