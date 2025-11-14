@@ -6,7 +6,6 @@ This guide explains how to run the AI Workflow Capture System on your local mach
 
 - **Node.js** (v18 or higher)
 - **npm** or **yarn**
-- **PostgreSQL** database (optional - can use in-memory storage)
 - **OpenAI API Key**
 
 ## Installation Steps
@@ -35,9 +34,6 @@ OPENAI_API_KEY=your_openai_api_key_here
 # Session Secret (generate a random string)
 SESSION_SECRET=your_random_session_secret_here
 
-# Database (Optional - only if using PostgreSQL)
-DATABASE_URL=postgresql://user:password@localhost:5432/dbname
-
 # Node Environment
 NODE_ENV=development
 ```
@@ -46,6 +42,8 @@ NODE_ENV=development
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
+
+**Note:** The application uses in-memory storage and does not require a database.
 
 ### 4. Install Puppeteer Dependencies
 
@@ -104,21 +102,7 @@ xcode-select --install
 **Windows:**
 Puppeteer should work out of the box on Windows. If you encounter issues, ensure you have the latest Visual C++ redistributables installed.
 
-### 5. Database Setup (Optional)
-
-If you want to use PostgreSQL instead of in-memory storage:
-
-```bash
-# Create the database
-createdb workflow_capture
-
-# Run migrations
-npm run db:push
-```
-
-**Note:** The application currently uses in-memory storage by default and doesn't require a database for core functionality.
-
-### 6. Start the Application
+### 5. Start the Application
 
 **Development Mode:**
 ```bash
@@ -131,7 +115,7 @@ The application will be available at:
 - **Frontend:** http://localhost:5000
 - **Backend API:** http://localhost:5000/api
 
-### 7. Verify Installation
+### 6. Verify Installation
 
 1. Open http://localhost:5000 in your browser
 2. Check the health endpoint: http://localhost:5000/api/health
@@ -233,10 +217,6 @@ session_id=abc123; domain=.example.com; path=/
 # Development
 npm run dev              # Start dev server (frontend + backend)
 
-# Database
-npm run db:push          # Push schema changes to database
-npm run db:studio        # Open Drizzle Studio (database GUI)
-
 # Type Checking
 npm run check            # Run TypeScript type checking
 
@@ -250,7 +230,7 @@ npm run build            # Build for production
 - **Backend:** Node.js, Express, TypeScript
 - **AI:** OpenAI GPT-4.1-mini
 - **Automation:** Puppeteer
-- **Database:** PostgreSQL (optional), Drizzle ORM
+- **Storage:** In-memory (LRU cache)
 - **Validation:** Zod
 - **State Management:** TanStack Query
 
@@ -272,8 +252,6 @@ For production deployment:
    ```
 
 4. Set up a reverse proxy (nginx, Caddy) to handle SSL/TLS
-
-5. Consider using a managed PostgreSQL service (if using database)
 
 ## Security Considerations
 
