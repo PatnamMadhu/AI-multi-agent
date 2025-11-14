@@ -8,16 +8,6 @@ export const visualDiffConfigSchema = z.object({
 
 export type VisualDiffConfig = z.infer<typeof visualDiffConfigSchema>;
 
-// Schema for authentication preference
-export const authPreferenceSchema = z.enum([
-  "auto-detect",
-  "already-logged-in",
-  "need-sign-in",
-  "need-sign-up"
-]);
-
-export type AuthPreference = z.infer<typeof authPreferenceSchema>;
-
 // Schema for capturing workflow tasks
 export const taskRequestSchema = z.object({
   question: z.string().min(1, "Question is required"),
@@ -29,7 +19,6 @@ export const taskRequestSchema = z.object({
     path: z.string().optional(),
   })).optional(),
   visualDiff: visualDiffConfigSchema,
-  authPreference: authPreferenceSchema.optional(),
 });
 
 export type TaskRequest = z.infer<typeof taskRequestSchema>;

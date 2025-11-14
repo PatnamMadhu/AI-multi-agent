@@ -1,51 +1,11 @@
 import OpenAI from "openai";
-import { TaskAnalysis, NavigationStep, AuthPreference } from "@shared/schema";
+import { TaskAnalysis, NavigationStep } from "@shared/schema";
 
 // Using gpt-4.1-mini for compatibility with chat completions API
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-export async function analyzeTask(question: string, authPreference?: AuthPreference): Promise<TaskAnalysis> {
+export async function analyzeTask(question: string): Promise<TaskAnalysis> {
   try {
-    // Build authentication-specific instructions based on user's preference
-    let authInstructions = "";
-    
-    if (authPreference === "already-logged-in") {
-      authInstructions = `
-          AUTHENTICATION MODE: User is already logged in
-          - Skip all authentication checks
-          - Do NOT check for login state
-          - Proceed directly with the main task
-          - Assume user has valid session and permissions`;
-    } else if (authPreference === "need-sign-in") {
-      authInstructions = `
-          AUTHENTICATION MODE: User needs to sign in
-          - Focus on documenting the sign-in process in detail
-          - Show where to enter email and password
-          - Document the complete login flow
-          - Use placeholder text like "[User will enter email]" for credentials
-          - After documenting sign-in, proceed with the main task`;
-    } else if (authPreference === "need-sign-up") {
-      authInstructions = `
-          AUTHENTICATION MODE: User needs to sign up
-          - Focus on documenting the sign-up/registration process in detail
-          - Show where to enter registration information
-          - Document the complete registration flow
-          - Use placeholder text like "[User will enter email]" for form fields
-          - After documenting sign-up, proceed with the main task`;
-    } else {
-      // Default: auto-detect
-      authInstructions = `
-          AUTHENTICATION MODE: Auto-detect (check both scenarios)
-          - ALWAYS check for authentication state first before attempting the main task
-          - Use element-exists to detect if user is logged in (check for logout button, profile icon, or other logged-in indicators)
-          - If login is required, include conditional branching that:
-            1. Checks if user is already logged in
-            2. If not logged in: Take screenshots showing the login form and document the login process
-            3. If logged in: Continue with the main task
-          - IMPORTANT: Document the workflow for BOTH logged-in and logged-out states
-          - For login forms: Use placeholder text like "[User will enter email]" or "[User will enter password]" in descriptions`;
-    }
-
     const response = await openai.chat.completions.create({
       model: "gpt-4.1-mini",
       messages: [
@@ -85,7 +45,15 @@ export async function analyzeTask(question: string, authPreference?: AuthPrefere
           - waitFor
           - conditional (optional)
 
-          ${authInstructions}
+          AUTHENTICATION HANDLING:
+          - ALWAYS check for authentication state first before attempting the main task
+          - Use element-exists to detect if user is logged in (check for logout button, profile icon, or other logged-in indicators)
+          - If login is required, include conditional branching that:
+            1. Checks if user is already logged in
+            2. If not logged in: Take screenshots showing the login form and document the login process
+            3. If logged in: Continue with the main task
+          - IMPORTANT: Document the workflow for BOTH logged-in and logged-out states
+          - For login forms: Use placeholder text like "[User will enter email]" or "[User will enter password]" in descriptions
 
           CONDITIONAL BRANCHING:
           Use conditional steps when the workflow may differ based on page state. There are two types:
