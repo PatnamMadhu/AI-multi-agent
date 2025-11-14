@@ -11,7 +11,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       // Validate request body
       const validationResult = taskRequestSchema.safeParse(req.body);
-      
+      console.log("Validation result:", validationResult);
+
       if (!validationResult.success) {
         return res.status(400).json({
           error: "Invalid request",
@@ -29,7 +30,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Return result
       return res.json(result);
-
     } catch (error) {
       console.error("Error in /api/capture-workflow:", error);
       return res.status(500).json({

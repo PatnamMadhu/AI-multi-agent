@@ -15,12 +15,16 @@ import { useToast } from "@/hooks/use-toast";
 
 export default function Home() {
   const [workflow, setWorkflow] = useState<WorkflowResponse | null>(null);
-  const [selectedScreenshot, setSelectedScreenshot] = useState<Screenshot | null>(null);
+  const [selectedScreenshot, setSelectedScreenshot] =
+    useState<Screenshot | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const { toast } = useToast();
 
   // Progress state that updates during workflow capture
-  type ProgressStep = { label: string; status: "pending" | "in-progress" | "completed" };
+  type ProgressStep = {
+    label: string;
+    status: "pending" | "in-progress" | "completed";
+  };
   const [progress, setProgress] = useState<{
     currentStep: number;
     totalSteps: number;
@@ -42,32 +46,40 @@ export default function Home() {
   const captureWorkflowMutation = useMutation({
     mutationFn: async (question: string) => {
       // Update progress to show we're starting
-      setProgress(prev => ({
+      setProgress((prev) => ({
         ...prev,
         currentStep: 1,
         statusMessage: "Analyzing task with AI...",
         steps: prev.steps.map((step, idx) => ({
           ...step,
-          status: idx === 0 ? "in-progress" as const : "pending" as const,
+          status: idx === 0 ? ("in-progress" as const) : ("pending" as const),
         })),
       }));
 
-      const result = await apiRequest<WorkflowResponse>("POST", "/api/capture-workflow", {
-        question,
-      });
+      const result = await apiRequest<WorkflowResponse>(
+        "POST",
+        "/api/capture-workflow",
+        {
+          question,
+        },
+      );
 
       return result;
+      console.log("result", result);
     },
     onSuccess: (data) => {
       // Always set workflow so we can display results or errors
       setWorkflow(data);
-      
+
       // Update progress to show completion
-      setProgress(prev => ({
+      setProgress((prev) => ({
         ...prev,
         currentStep: 5,
-        statusMessage: data.status === "success" ? "Workflow capture complete!" : "Workflow capture encountered errors",
-        steps: prev.steps.map(step => ({
+        statusMessage:
+          data.status === "success"
+            ? "Workflow capture complete!"
+            : "Workflow capture encountered errors",
+        steps: prev.steps.map((step) => ({
           ...step,
           status: "completed" as const,
         })),
@@ -78,7 +90,7 @@ export default function Home() {
         const isCacheHit = data.cacheHit === true;
         toast({
           title: isCacheHit ? "Success! (Cached Result)" : "Success!",
-          description: isCacheHit 
+          description: isCacheHit
             ? `Retrieved ${data.screenshots.length} cached steps instantly`
             : `Captured ${data.screenshots.length} steps in ${(data.processingDuration / 1000).toFixed(1)}s`,
         });
@@ -102,13 +114,13 @@ export default function Home() {
         description: error.message || "Failed to capture workflow",
         variant: "destructive",
       });
-      
+
       // Reset progress on error
-      setProgress(prev => ({
+      setProgress((prev) => ({
         ...prev,
         currentStep: 0,
         statusMessage: "Error occurred",
-        steps: prev.steps.map(step => ({
+        steps: prev.steps.map((step) => ({
           ...step,
           status: "pending" as const,
         })),
@@ -176,10 +188,15 @@ export default function Home() {
             <div className="space-y-2">
               <h2 className="text-2xl font-semibold">Capture Any Workflow</h2>
               <p className="text-muted-foreground">
-                Describe the task you want to capture, and our AI will automatically navigate the application and screenshot each step of the workflow.
+                Describe the task you want to capture, and our AI will
+                automatically navigate the application and screenshot each step
+                of the workflow.
               </p>
             </div>
-            <TaskInput onSubmit={handleTaskSubmit} isLoading={captureWorkflowMutation.isPending} />
+            <TaskInput
+              onSubmit={handleTaskSubmit}
+              isLoading={captureWorkflowMutation.isPending}
+            />
           </div>
         )}
 
@@ -194,51 +211,67 @@ export default function Home() {
         )}
 
         {/* Error State */}
-        {(captureWorkflowMutation.isError || (workflow && workflow.status === "failed")) && (
-          <ErrorDisplay 
+        {(captureWorkflowMutation.isError ||
+          (workflow && workflow.status === "failed")) && (
+          <ErrorDisplay
             error={
-              captureWorkflowMutation.error?.message || 
-              (workflow?.error) || 
+              captureWorkflowMutation.error?.message ||
+              workflow?.error ||
               "An unknown error occurred"
-            } 
+            }
             onRetry={handleNewCapture}
           />
         )}
 
         {/* Results */}
-        {workflow && !captureWorkflowMutation.isPending && (workflow.status === "success" || workflow.status === "partial") && workflow.screenshots && (
-          <div className="space-y-8">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="flex items-center gap-3">
-                  <h2 className="text-2xl font-semibold">Workflow Captured Successfully</h2>
-                  {workflow.cacheHit && (
-                    <Badge variant="secondary" className="gap-1.5" data-testid="badge-cache-hit">
-                      <Database className="h-3 w-3" />
-                      <span className="text-xs font-medium">Cached</span>
-                    </Badge>
-                  )}
+        {workflow &&
+          !captureWorkflowMutation.isPending &&
+          (workflow.status === "success" || workflow.status === "partial") &&
+          workflow.screenshots && (
+            <div className="space-y-8">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-2xl font-semibold">
+                      Workflow Captured Successfully
+                    </h2>
+                    {workflow.cacheHit && (
+                      <Badge
+                        variant="secondary"
+                        className="gap-1.5"
+                        data-testid="badge-cache-hit"
+                      >
+                        <Database className="h-3 w-3" />
+                        <span className="text-xs font-medium">Cached</span>
+                      </Badge>
+                    )}
+                  </div>
+                  <p
+                    className="text-muted-foreground mt-1"
+                    data-testid="text-processing-info"
+                  >
+                    {workflow.cacheHit
+                      ? `${workflow.screenshots.length} cached steps retrieved instantly`
+                      : `${workflow.screenshots.length} steps captured in ${(workflow.processingDuration / 1000).toFixed(1)}s`}
+                  </p>
                 </div>
-                <p className="text-muted-foreground mt-1" data-testid="text-processing-info">
-                  {workflow.cacheHit 
-                    ? `${workflow.screenshots.length} cached steps retrieved instantly`
-                    : `${workflow.screenshots.length} steps captured in ${(workflow.processingDuration / 1000).toFixed(1)}s`
-                  }
-                </p>
+                <Button
+                  onClick={handleNewCapture}
+                  variant="outline"
+                  data-testid="button-new-capture"
+                >
+                  New Capture
+                </Button>
               </div>
-              <Button onClick={handleNewCapture} variant="outline" data-testid="button-new-capture">
-                New Capture
-              </Button>
+
+              <ScreenshotGallery
+                screenshots={workflow.screenshots}
+                onImageClick={handleImageClick}
+              />
+
+              <MetadataPanel workflow={workflow} />
             </div>
-
-            <ScreenshotGallery
-              screenshots={workflow.screenshots}
-              onImageClick={handleImageClick}
-            />
-
-            <MetadataPanel workflow={workflow} />
-          </div>
-        )}
+          )}
       </main>
 
       {/* Image Modal */}
