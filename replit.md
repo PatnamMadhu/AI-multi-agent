@@ -73,6 +73,14 @@ The system provides flexible authentication handling with manual user control:
   - Validates and parses cookies with clear error messages
   - Component state automatically resets when switching auth modes (prevents data leaks)
   - Cookies are only transmitted to backend when in "already-logged-in" mode
+  - Supports OAuth provider cookies (Google, GitHub, etc.) for session reuse across apps
+- **OAuth Popup Handling** (Nov 2025):
+  - Automatically detects OAuth buttons ("Continue with Google", "Sign in with GitHub", etc.)
+  - Handles popup windows for OAuth providers (Google, GitHub, Microsoft, Apple)
+  - Waits for OAuth flow completion and popup closure before continuing
+  - Supports cookie reuse: if OAuth provider session exists, auto-confirms without credential entry
+  - Documents OAuth button clicks without revealing popup internals
+  - Works seamlessly with both auto-detect and explicit sign-in modes
 - **Dual-Path Documentation**: Auto-detect mode captures workflows for BOTH logged-in and logged-out states
 - **Login Form Documentation**: Takes screenshots showing where users enter credentials
 - **Non-Intrusive**: Uses placeholder descriptions like "[User will enter email]" without interrupting flow

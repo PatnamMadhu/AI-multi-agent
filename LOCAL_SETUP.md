@@ -159,6 +159,35 @@ Cookie String:
 session_id=abc123; domain=.example.com; path=/
 ```
 
+### OAuth Authentication Support
+
+The system automatically handles OAuth/SSO logins for popular providers:
+
+**Supported OAuth Providers:**
+- Google ("Continue with Google", "Sign in with Google")
+- GitHub ("Continue with GitHub", "Sign in with GitHub")
+- Microsoft ("Continue with Microsoft")
+- Apple ("Continue with Apple")
+
+**How It Works:**
+1. System detects OAuth buttons automatically
+2. Clicks the OAuth button
+3. Waits for OAuth popup window to appear
+4. Popup completes authentication (auto-confirms if you have an active session)
+5. Popup closes automatically
+6. Main workflow continues
+
+**OAuth Cookie Reuse:**
+If you import Google/GitHub/Microsoft cookies along with app cookies, the OAuth popup will auto-confirm without requiring credential entry. This enables one Google account to authenticate across multiple apps.
+
+**Example with OAuth:**
+```
+Question: "How do I create a project in Linear?"
+Auth: "I'm already logged in"
+Cookies: [Linear app cookies + Google OAuth cookies]
+Result: System clicks "Continue with Google" → popup auto-confirms → workflow continues
+```
+
 ## Troubleshooting
 
 ### Puppeteer Issues

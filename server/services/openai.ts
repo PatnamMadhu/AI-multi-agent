@@ -82,6 +82,21 @@ GENERAL RULES (VERY IMPORTANT):
 
 ${authInstructions}
 
+OAUTH / SSO AUTHENTICATION:
+- If the login page only shows OAuth buttons (e.g., "Continue with Google", "Sign in with GitHub"), handle them specially:
+  - Include a step to click the OAuth button
+  - After clicking, a popup window will open automatically (you don't need to handle this explicitly)
+  - The system will detect the popup and handle OAuth provider login
+  - After OAuth completes, the popup closes automatically and you continue with the main task
+- Common OAuth providers: Google, GitHub, Microsoft, Apple
+- OAuth button selectors examples:
+  - "button:contains-text('Continue with Google')" (conceptual - use actual CSS)
+  - Real selectors: "button[aria-label*='Google']", "button[aria-label*='GitHub']"
+  - Or by text content: Look for buttons with "Google", "GitHub", "Microsoft", "Apple" in text
+- Document the OAuth button click with description like: "Click 'Continue with Google' to authenticate via OAuth popup"
+- No need to document what happens inside the OAuth popup - the system handles that automatically
+- After OAuth, check if user is logged in and continue with main task
+
 CONDITIONALS:
 - Binary conditional ("element-exists", "text-contains", "url-matches", "if-else"):
   - Use "ifBranch" (required) and "elseBranch" (optional).

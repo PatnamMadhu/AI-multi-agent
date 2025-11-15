@@ -150,6 +150,7 @@ export interface CookieData {
   secure?: boolean;
   httpOnly?: boolean;
   sameSite?: "Lax" | "Strict" | "None" | "lax" | "strict" | "none";
+  provider?: string; // OAuth provider domain (e.g., "google.com", "github.com")
 }
 
 export interface VisualDiffConfig {
@@ -160,10 +161,60 @@ export interface VisualDiffConfig {
 export interface TaskRequest {
   question: string;
   targetUrl?: string;
-  cookies?: CookieData[];
+  cookies?: CookieData[]; // App cookies + OAuth provider cookies
   visualDiff?: VisualDiffConfig;
   authPreference?: AuthPreference;
 }
+
+// OAuth configuration for known providers
+export interface OAuthProviderConfig {
+  name: string; // "Google", "GitHub", "Microsoft", etc.
+  domain: string; // "google.com", "github.com", etc.
+  buttonPatterns: string[]; // Text patterns to detect OAuth buttons
+}
+
+export const KNOWN_OAUTH_PROVIDERS: OAuthProviderConfig[] = [
+  {
+    name: "Google",
+    domain: "google.com",
+    buttonPatterns: [
+      "Continue with Google",
+      "Sign in with Google",
+      "Log in with Google",
+      "Google",
+    ],
+  },
+  {
+    name: "GitHub",
+    domain: "github.com",
+    buttonPatterns: [
+      "Continue with GitHub",
+      "Sign in with GitHub",
+      "Log in with GitHub",
+      "GitHub",
+    ],
+  },
+  {
+    name: "Microsoft",
+    domain: "microsoft.com",
+    buttonPatterns: [
+      "Continue with Microsoft",
+      "Sign in with Microsoft",
+      "Log in with Microsoft",
+      "Microsoft",
+    ],
+  },
+  {
+    name: "Apple",
+    domain: "apple.com",
+    buttonPatterns: [
+      "Continue with Apple",
+      "Sign in with Apple",
+      "Log in with Apple",
+      "Apple",
+    ],
+  },
+];
 
 export type WorkflowStatus = "success" | "partial" | "failed";
 

@@ -4,7 +4,9 @@ import type {
   Screenshot,
   TaskAnalysis,
   BoundingBox,
+  CookieData,
 } from "@shared/schema";
+import { KNOWN_OAUTH_PROVIDERS } from "@shared/schema";
 import { WaitManager } from "./waitManager";
 import {
   NavigationError,
@@ -77,6 +79,18 @@ export class BrowserAutomation {
       `[BrowserAutomation] Applying ${cookies.length} session cookies before navigation`,
     );
     await this.page.setCookie(...cookies);
+  }
+
+  /**
+   * Detect if a selector might be an OAuth button
+   */
+  private isOAuthButton(selector: string, description: string): boolean {
+    const combined = `${selector} ${description}`.toLowerCase();
+    return KNOWN_OAUTH_PROVIDERS.some((provider) =>
+      provider.buttonPatterns.some(
+        (pattern) => combined.includes(pattern.toLowerCase())
+      )
+    );
   }
 
   private resolveUrl(rawUrl: string): string {
@@ -253,6 +267,39 @@ export class BrowserAutomation {
             "click",
           );
 
+          // Check if this is an OAuth button - set up popup listener BEFORE clicking
+          const isOAuth = this.isOAuthButton(
+            step.selector,
+            step.description || ""
+          );
+
+          let popupPromise: Promise<Page | null> | null = null;
+
+          if (isOAuth) {
+            console.log(`[OAuth] Detected OAuth button: ${step.description}`);
+            console.log(`[OAuth] Setting up popup listener before click...`);
+
+            // Set up popup listener BEFORE clicking
+            popupPromise = new Promise<Page | null>((resolve) => {
+              const timeout = setTimeout(() => {
+                console.log("[OAuth] No popup detected within 5 seconds");
+                resolve(null);
+              }, 5000);
+
+              this.page!.once("popup", async (popup) => {
+                clearTimeout(timeout);
+                if (popup) {
+                  console.log(`[OAuth] Popup detected: ${popup.url()}`);
+                  resolve(popup);
+                } else {
+                  console.log("[OAuth] Popup event fired but popup is null");
+                  resolve(null);
+                }
+              });
+            });
+          }
+
+          // Click the element (potentially triggering OAuth popup)
           await this.waitManager.withRetry(
             async () => {
               try {
@@ -264,10 +311,62 @@ export class BrowserAutomation {
             { maxRetries: 2, baseDelay: 500 },
           );
 
-          await this.waitManager.waitForStability({
-            timeout: 2000,
-            stabilityDelay: 300,
-          });
+          // If OAuth button, wait for popup to complete
+          if (isOAuth && popupPromise) {
+            const popup = await popupPromise;
+
+            if (popup) {
+              // Detect which OAuth provider
+              const popupUrl = popup.url();
+              const provider = KNOWN_OAUTH_PROVIDERS.find((p) =>
+                popupUrl.includes(p.domain)
+              );
+
+              if (provider) {
+                console.log(`[OAuth] Detected ${provider.name} OAuth flow at ${popupUrl}`);
+              }
+
+              // Wait for popup to close
+              console.log("[OAuth] Waiting for OAuth popup to close...");
+              try {
+                await new Promise<void>((resolve) => {
+                  const timeout = setTimeout(() => {
+                    console.log("[OAuth] Popup timeout - continuing anyway");
+                    resolve();
+                  }, 60000);
+
+                  const checkClosed = setInterval(() => {
+                    if (popup.isClosed()) {
+                      clearTimeout(timeout);
+                      clearInterval(checkClosed);
+                      console.log("[OAuth] OAuth popup closed successfully");
+                      resolve();
+                    }
+                  }, 500);
+                });
+              } catch (err) {
+                console.log("[OAuth] Error waiting for popup:", err);
+              }
+
+              // Wait for main page to stabilize after OAuth
+              await this.waitManager.waitForStability({
+                timeout: 3000,
+                stabilityDelay: 500,
+              });
+            } else {
+              console.log("[OAuth] No popup appeared - treating as regular click");
+              await this.waitManager.waitForStability({
+                timeout: 2000,
+                stabilityDelay: 300,
+              });
+            }
+          } else {
+            // Regular click - normal stability wait
+            await this.waitManager.waitForStability({
+              timeout: 2000,
+              stabilityDelay: 300,
+            });
+          }
         }
         break;
 
