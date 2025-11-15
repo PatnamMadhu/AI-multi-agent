@@ -26,10 +26,11 @@ AUTH MODE: already-logged-in
   } else if (authPreference === "need-sign-in") {
     if (credentials && (credentials.username || credentials.password)) {
       authInstructions = `
-AUTH MODE: need-sign-in (with credentials)
-- Explicitly document AND PERFORM the sign-in flow
-- User provided credentials: ${credentials.username ? `username="${credentials.username}"` : ""} ${credentials.password ? "(password provided)" : ""}
-- Enter the ACTUAL credentials into the login form
+AUTH MODE: need-sign-in (credentials will be auto-filled)
+- Explicitly document the sign-in flow with actual form interaction
+- Generate "type" steps for email/username field and password field
+- The system will automatically fill these fields with the provided credentials during execution
+- Use generic selectors and descriptions (e.g., "input[type='email']", "input[type='password']")
 - Wait for login to complete (check for dashboard, profile, or redirect)
 - After successful login, continue with the main task.`;
     } else {
@@ -43,10 +44,11 @@ AUTH MODE: need-sign-in
   } else if (authPreference === "need-sign-up") {
     if (credentials && (credentials.username || credentials.password || credentials.displayName)) {
       authInstructions = `
-AUTH MODE: need-sign-up (with credentials)
-- Explicitly document AND PERFORM the registration/sign-up flow
-- User provided credentials: ${credentials.displayName ? `name="${credentials.displayName}"` : ""} ${credentials.username ? `email="${credentials.username}"` : ""} ${credentials.password ? "(password provided)" : ""}
-- Enter the ACTUAL credentials into the sign-up form
+AUTH MODE: need-sign-up (credentials will be auto-filled)
+- Explicitly document the registration/sign-up flow with actual form interaction
+- Generate "type" steps for name/display name field, email field, and password field
+- The system will automatically fill these fields with the provided credentials during execution
+- Use generic selectors and descriptions (e.g., "input[name='name']", "input[type='email']", "input[type='password']")
 - Wait for registration to complete (email confirmation, redirect, etc.)
 - After successful registration, continue with the main task.`;
     } else {

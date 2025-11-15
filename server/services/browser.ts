@@ -5,6 +5,7 @@ import type {
   TaskAnalysis,
   BoundingBox,
   CookieData,
+  Credentials,
 } from "@shared/schema";
 import { KNOWN_OAUTH_PROVIDERS } from "@shared/schema";
 import { WaitManager } from "./waitManager";
@@ -39,6 +40,7 @@ export class BrowserAutomation {
   private visualDiffDetector: VisualDiffDetector | null = null;
   private lastBoundingBox: BoundingBox | null = null;
   private baseUrl: string | null = null;
+  private credentials: Credentials | null = null; // Stored for auto-fill during execution
 
   constructor(visualDiffDetector?: VisualDiffDetector) {
     this.visualDiffDetector = visualDiffDetector || null;
@@ -133,12 +135,14 @@ export class BrowserAutomation {
   async executeNavigationPlan(
     analysis: TaskAnalysis,
     progressCallback?: (step: number, message: string) => void,
+    credentials?: Credentials, // Credentials for auto-filling login/signup forms
   ): Promise<Screenshot[]> {
     if (!this.page || !this.waitManager) {
       throw new Error("Browser not initialized");
     }
 
     this.baseUrl = analysis.startingUrl || null;
+    this.credentials = credentials || null; // Store for use during form filling
 
     const screenshots: Screenshot[] = [];
     const plan = analysis.navigationPlan || [];
@@ -381,13 +385,42 @@ export class BrowserAutomation {
             "type",
           );
 
+          // Auto-fill credentials if available and this is a login/signup field
+          let valueToType = step.value;
+          if (this.credentials) {
+            const selectorLower = step.selector.toLowerCase();
+            const descriptionLower = (step.description || "").toLowerCase();
+            
+            // Check if this is an email/username field
+            if ((selectorLower.includes('email') || selectorLower.includes('username') || selectorLower.includes("type='email'") ||
+                 descriptionLower.includes('email') || descriptionLower.includes('username')) &&
+                this.credentials.username) {
+              valueToType = this.credentials.username;
+              console.log(`[BrowserAutomation] Auto-filling email/username field`);
+            }
+            // Check if this is a password field
+            else if ((selectorLower.includes('password') || selectorLower.includes("type='password'") ||
+                      descriptionLower.includes('password')) &&
+                     this.credentials.password) {
+              valueToType = this.credentials.password;
+              console.log(`[BrowserAutomation] Auto-filling password field`);
+            }
+            // Check if this is a name/display name field
+            else if ((selectorLower.includes('name') || selectorLower.includes('display') ||
+                      descriptionLower.includes('name') || descriptionLower.includes('display')) &&
+                     this.credentials.displayName) {
+              valueToType = this.credentials.displayName;
+              console.log(`[BrowserAutomation] Auto-filling name field`);
+            }
+          }
+
           await this.waitManager.withRetry(
             async () => {
               try {
                 await this.page!.click(step.selector!, {
                   clickCount: 3,
                 });
-                await this.page!.type(step.selector!, step.value!, {
+                await this.page!.type(step.selector!, valueToType, {
                   delay: 50,
                 });
               } catch {

@@ -104,7 +104,7 @@ export default function Home() {
           title: isCacheHit ? "Success! (Cached Result)" : "Success!",
           description: isCacheHit
             ? `Retrieved ${data.screenshots.length} cached steps instantly`
-            : `Captured ${data.screenshots.length} steps in ${(data.processingDuration / 1000).toFixed(1)}s`,
+            : `Captured ${data.screenshots.length} steps${data.processingDuration ? ` in ${(data.processingDuration / 1000).toFixed(1)}s` : ''}`,
         });
       } else if (data.status === "partial") {
         toast({
@@ -269,7 +269,7 @@ export default function Home() {
                   >
                     {workflow.cacheHit
                       ? `${workflow.screenshots.length} cached steps retrieved instantly`
-                      : `${workflow.screenshots.length} steps captured in ${(workflow.processingDuration / 1000).toFixed(1)}s`}
+                      : `${workflow.screenshots.length} steps captured${workflow.processingDuration ? ` in ${(workflow.processingDuration / 1000).toFixed(1)}s` : ''}`}
                   </p>
                 </div>
                 <Button

@@ -22,20 +22,37 @@ export class WorkflowOrchestrator {
   }
 
   async captureWorkflow(request: TaskRequest): Promise<WorkflowResponse> {
-    console.log("[Orchestrator] Incoming request:", request.question);
+    // Log question but NEVER log credentials for security
+    console.log("[Orchestrator] Incoming request:", {
+      question: request.question,
+      authPreference: request.authPreference,
+      targetUrl: request.targetUrl,
+      hasCookies: !!request.cookies?.length,
+      hasCredentials: !!request.credentials,
+    });
 
-    const cacheKey = Cache.generateCacheKey(request);
-    const cached = Cache.workflowCache.get(cacheKey);
+    // SECURITY: Skip cache entirely if credentials object exists
+    // This ensures credentials are never processed, hashed, or logged
+    // We check for presence of credentials object regardless of field values
+    // to prevent empty-string bypass attacks
+    const hasCredentials = !!request.credentials;
 
-    if (cached) {
-      console.log(`[Orchestrator] Cache HIT for: "${request.question}"`);
-      return {
-        ...cached,
-        cacheHit: true,
-      };
+    if (hasCredentials) {
+      console.log(`[Orchestrator] Skipping cache for request with credentials (security)`);
+    } else {
+      const cacheKey = Cache.generateCacheKey(request);
+      const cached = Cache.workflowCache.get(cacheKey);
+
+      if (cached) {
+        console.log(`[Orchestrator] Cache HIT for: "${request.question}"`);
+        return {
+          ...cached,
+          cacheHit: true,
+        };
+      }
+
+      console.log(`[Orchestrator] Cache MISS for: "${request.question}"`);
     }
-
-    console.log(`[Orchestrator] Cache MISS for: "${request.question}"`);
 
     const automation = new BrowserAutomation(this.visualDiff);
     await automation.initialize();
@@ -64,6 +81,7 @@ export class WorkflowOrchestrator {
         (step, message) => {
           console.log(`[Progress] Step ${step}: ${message}`);
         },
+        request.credentials, // Pass credentials to browser automation for auto-fill
       );
     } catch (err) {
       status = "partial";
@@ -84,8 +102,12 @@ export class WorkflowOrchestrator {
       errorMessage,
     };
 
-    Cache.workflowCache.set(cacheKey, response);
-    console.log(`[Orchestrator] Cached result for: "${request.question}"`);
+    // Cache the response only if credentials were NOT provided
+    if (!hasCredentials) {
+      const cacheKey = Cache.generateCacheKey(request);
+      Cache.workflowCache.set(cacheKey, response);
+      console.log(`[Orchestrator] Cached result for: "${request.question}"`);
+    }
 
     return response;
   }

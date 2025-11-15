@@ -65,8 +65,15 @@ The system provides flexible authentication handling with manual user control:
 - **Manual Authentication Selection**: Users can choose their authentication state via radio buttons:
   - `Auto-detect` (default): Checks login state and documents both logged-in/logged-out scenarios
   - `Already logged in`: Skips all auth checks, proceeds directly with main task using imported cookies
-  - `Need to sign in`: Focuses on documenting the sign-in workflow in detail
-  - `Need to sign up`: Focuses on documenting the sign-up/registration workflow
+  - `Need to sign in`: Focuses on documenting the sign-in workflow in detail (with optional credential input)
+  - `Need to sign up`: Focuses on documenting the sign-up/registration workflow (with optional credential input)
+- **Credential Input Feature** (Nov 2025): When "Need to sign in" or "Need to sign up" is selected:
+  - Optional credential fields appear for username/email, password, and display name (signup only)
+  - If credentials provided: System PERFORMS the actual login/signup, then continues with main workflow
+  - If credentials omitted: System DOCUMENTS the login/signup forms without filling them (placeholder mode)
+  - Credentials are NEVER stored or cached - used only transiently for workflow execution
+  - Workflows with credentials are NOT cached to prevent credential persistence
+  - Works with standard login forms and can be combined with OAuth buttons
 - **Cookie Import Feature** (Nov 2025): When "Already logged in" is selected:
   - Collapsible UI allows users to paste browser cookies exported from extensions
   - Supports two formats: JSON array `[{"name":"...","value":"..."}]` and cookie format `name=value; domain=...; path=...`
@@ -82,11 +89,11 @@ The system provides flexible authentication handling with manual user control:
   - Documents OAuth button clicks without revealing popup internals
   - Works seamlessly with both auto-detect and explicit sign-in modes
 - **Dual-Path Documentation**: Auto-detect mode captures workflows for BOTH logged-in and logged-out states
-- **Login Form Documentation**: Takes screenshots showing where users enter credentials
-- **Non-Intrusive**: Uses placeholder descriptions like "[User will enter email]" without interrupting flow
-- **Conditional Routing**: If already logged in, skips to main task; if not, documents login process
+- **Login Form Documentation**: Takes screenshots showing where users enter credentials (or actual values if provided)
+- **Flexible Modes**: Choose between documentation-only (placeholders) and execution (real credentials)
+- **Conditional Routing**: If already logged in, skips to main task; if not, handles login/signup flow
 - **Visual Guidance**: Screenshots show login forms, sign-up options, and authentication steps
-- **Cache Isolation**: Different auth preferences and cookie states maintain separate cache entries to ensure correct behavior
+- **Cache Isolation**: Different auth preferences, cookie states, and credentials maintain separate cache entries to ensure correct behavior
 
 **Screenshot Annotations** (Added Nov 2025):
 Each screenshot can include visual annotations showing interacted elements:
@@ -114,11 +121,13 @@ LRU cache implementation for workflow result optimization:
   - Normalized target URL (lowercase, trimmed)
   - Normalized auth preference (lowercase, defaults to "auto-detect")
   - Cookie hash (SHA-256 of complete cookie data including values for session isolation)
+  - **Credentials are never processed**: Cache key generation is skipped entirely when credentials are provided
 - **Cache Isolation**: Different auth preferences and cookie states maintain separate cache entries
+- **Security Guarantee**: Workflows with credentials are never cached - orchestrator short-circuits before cache key generation
 - **LRU Eviction**: Least Recently Used eviction when cache is full (O(n) acceptable for size 50)
 - **TTL Expiration**: Automatic cleanup of expired entries before size enforcement prevents deadlock
 - **Deep Cloning**: JSON serialization ensures cache integrity - consumers cannot corrupt cached data
-- **Cache Orchestration**: WorkflowOrchestrator checks cache before execution, stores successful results
+- **Cache Orchestration**: WorkflowOrchestrator checks credentials first, then cache; stores successful results only for non-credential workflows
 - **UI Indicators**: Frontend displays "Cached" badge with Database icon when results come from cache
 
 ### Schema & Validation
