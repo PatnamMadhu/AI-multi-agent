@@ -83,6 +83,12 @@ The system provides flexible authentication handling with manual user control:
   - Cookies are only transmitted to backend when in "already-logged-in" mode
   - Supports OAuth provider cookies (Google, GitHub, etc.) for session reuse across apps
   - **Error Handling**: Validation error clears automatically when cookies are imported or auth mode is changed
+  - **2FA/MFA Verification Code Support** (Nov 2025): Optional verification code input for handling 2FA/MFA prompts
+    - Input field appears below cookie import section
+    - Accepts verification codes up to 10 characters
+    - Browser automation automatically detects and fills verification code fields during workflow execution
+    - Detects fields with keywords: 'code', 'verification', '2fa', 'mfa', 'otp', 'token' in selectors or descriptions
+    - Verification codes are used transiently during execution and never cached or stored
 - **OAuth Popup Handling** (Nov 2025):
   - Automatically detects OAuth buttons ("Continue with Google", "Sign in with GitHub", etc.)
   - Handles popup windows for OAuth providers (Google, GitHub, Microsoft, Apple)

@@ -172,9 +172,10 @@ export function generateCacheKey(request: TaskRequest): string {
       .substring(0, 16);
   }
 
-  // SECURITY: Credentials are NEVER processed for caching
-  // Workflows with credentials are not cached at all (handled in orchestrator)
-  // This function deliberately ignores credentials to avoid any processing
+  // SECURITY: Credentials and verification codes are NEVER processed for caching
+  // Workflows with credentials or verification codes are not cached at all (handled in orchestrator)
+  // This function deliberately ignores credentials and verificationCode to avoid any processing
+  // Only question, targetUrl, authPreference, and cookies are used in the cache key
 
   return `${normalizedQuestion}|${normalizedUrl}|${normalizedAuth}|${cookieHash}`;
 }

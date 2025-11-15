@@ -22,7 +22,8 @@ interface TaskInputProps {
     question: string, 
     authPreference: AuthPreference, 
     cookies?: CookieData[],
-    credentials?: Credentials
+    credentials?: Credentials,
+    verificationCode?: string
   ) => void;
   isLoading: boolean;
 }
@@ -44,6 +45,7 @@ export function TaskInput({ onSubmit, isLoading }: TaskInputProps) {
     password: "",
     displayName: "",
   });
+  const [verificationCode, setVerificationCode] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
   const charCount = question.length;
   const maxChars = 500;
@@ -52,9 +54,10 @@ export function TaskInput({ onSubmit, isLoading }: TaskInputProps) {
     setAuthPreference(value);
     // Clear validation error when changing auth preference
     setValidationError(null);
-    // Clear cookies and reset CookieImport component when switching away from "already-logged-in" mode
+    // Clear cookies and verification code when switching away from "already-logged-in" mode
     if (value !== "already-logged-in") {
       setCookies([]);
+      setVerificationCode("");
       // Increment key to force CookieImport to remount with fresh state next time
       setCookieImportKey(prev => prev + 1);
     }
@@ -86,7 +89,13 @@ export function TaskInput({ onSubmit, isLoading }: TaskInputProps) {
           ? credentials
           : undefined;
       
-      onSubmit(question.trim(), authPreference, cookiesToSend, credentialsToSend);
+      // Only send verification code if in "already-logged-in" mode and code is provided
+      const verificationCodeToSend = 
+        authPreference === "already-logged-in" && verificationCode.trim()
+          ? verificationCode.trim()
+          : undefined;
+      
+      onSubmit(question.trim(), authPreference, cookiesToSend, credentialsToSend, verificationCodeToSend);
     }
   };
 
@@ -189,17 +198,51 @@ export function TaskInput({ onSubmit, isLoading }: TaskInputProps) {
         </RadioGroup>
 
         {authPreference === "already-logged-in" && (
-          <CookieImport 
-            key={`cookie-import-${cookieImportKey}`}
-            onCookiesChange={(cookies) => {
-              setCookies(cookies);
-              // Clear validation error when cookies are successfully imported
-              if (cookies.length > 0) {
-                setValidationError(null);
-              }
-            }} 
-            disabled={isLoading} 
-          />
+          <>
+            <CookieImport 
+              key={`cookie-import-${cookieImportKey}`}
+              onCookiesChange={(cookies) => {
+                setCookies(cookies);
+                // Clear validation error when cookies are successfully imported
+                if (cookies.length > 0) {
+                  setValidationError(null);
+                }
+              }} 
+              disabled={isLoading} 
+            />
+            
+            <div className="space-y-3 mt-4 p-4 rounded-md bg-muted/50 border">
+              <div className="flex items-center gap-2">
+                <Lock className="h-4 w-4 text-muted-foreground" />
+                <Label className="text-sm font-semibold">
+                  2FA/MFA Verification Code (Optional)
+                </Label>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                If the application requires a verification code during login, enter it here
+              </p>
+              
+              <div className="space-y-2">
+                <Label htmlFor="verification-code" className="text-sm font-medium">
+                  Verification Code
+                </Label>
+                <Input
+                  id="verification-code"
+                  data-testid="input-verification-code"
+                  type="text"
+                  placeholder="123456"
+                  value={verificationCode}
+                  onChange={(e) => setVerificationCode(e.target.value)}
+                  disabled={isLoading}
+                  maxLength={10}
+                />
+              </div>
+              
+              <p className="text-xs text-muted-foreground">
+                The system will automatically enter this code when prompted during the workflow
+              </p>
+            </div>
+          </>
         )}
 
         {(authPreference === "need-sign-in" || authPreference === "need-sign-up") && (

@@ -22,23 +22,27 @@ export class WorkflowOrchestrator {
   }
 
   async captureWorkflow(request: TaskRequest): Promise<WorkflowResponse> {
-    // Log question but NEVER log credentials for security
+    // Log question but NEVER log credentials or verification codes for security
     console.log("[Orchestrator] Incoming request:", {
       question: request.question,
       authPreference: request.authPreference,
       targetUrl: request.targetUrl,
       hasCookies: !!request.cookies?.length,
       hasCredentials: !!request.credentials,
+      hasVerificationCode: "verificationCode" in request && request.verificationCode !== undefined,
     });
 
-    // SECURITY: Skip cache entirely if credentials object exists
-    // This ensures credentials are never processed, hashed, or logged
-    // We check for presence of credentials object regardless of field values
-    // to prevent empty-string bypass attacks
+    // SECURITY: Skip cache entirely if credentials or verification code exists
+    // This ensures sensitive data is never processed, hashed, cached, or logged
+    // We check for presence of properties regardless of values (even empty strings)
+    // to prevent any bypass attacks
     const hasCredentials = !!request.credentials;
+    const hasVerificationCode = "verificationCode" in request && request.verificationCode !== undefined;
+    const hasSensitiveData = hasCredentials || hasVerificationCode;
 
-    if (hasCredentials) {
-      console.log(`[Orchestrator] Skipping cache for request with credentials (security)`);
+    if (hasSensitiveData) {
+      const reason = hasCredentials ? "credentials" : "verification code";
+      console.log(`[Orchestrator] Skipping cache for request with ${reason} (security)`);
     } else {
       const cacheKey = Cache.generateCacheKey(request);
       const cached = Cache.workflowCache.get(cacheKey);
@@ -82,6 +86,7 @@ export class WorkflowOrchestrator {
           console.log(`[Progress] Step ${step}: ${message}`);
         },
         request.credentials, // Pass credentials to browser automation for auto-fill
+        request.verificationCode, // Pass verification code for 2FA/MFA auto-fill
       );
     } catch (err) {
       status = "partial";
@@ -102,8 +107,8 @@ export class WorkflowOrchestrator {
       errorMessage,
     };
 
-    // Cache the response only if credentials were NOT provided
-    if (!hasCredentials) {
+    // Cache the response only if no sensitive data was provided
+    if (!hasSensitiveData) {
       const cacheKey = Cache.generateCacheKey(request);
       Cache.workflowCache.set(cacheKey, response);
       console.log(`[Orchestrator] Cached result for: "${request.question}"`);

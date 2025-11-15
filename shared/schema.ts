@@ -171,6 +171,7 @@ export interface TaskRequest {
   visualDiff?: VisualDiffConfig;
   authPreference?: AuthPreference;
   credentials?: Credentials; // Login/signup credentials
+  verificationCode?: string; // 2FA/MFA verification code (for already-logged-in mode)
 }
 
 // OAuth configuration for known providers

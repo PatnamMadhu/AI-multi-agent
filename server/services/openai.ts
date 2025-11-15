@@ -22,7 +22,10 @@ AUTH MODE: already-logged-in
 - Assume the user has a valid session
 - Do NOT navigate to /login or /signup
 - Skip all login/signup forms
-- Go directly to the page needed for the main task (dashboard, project list, etc.)`;
+- Go directly to the page needed for the main task (dashboard, project list, etc.)
+- If the application prompts for a verification code (2FA/MFA), include a step to type the code:
+  - Use selectors like: "input[name='code']", "input[placeholder*='verification']", "input[placeholder*='code']"
+  - The system will automatically fill in the verification code if provided`;
   } else if (authPreference === "need-sign-in") {
     if (credentials && (credentials.username || credentials.password)) {
       authInstructions = `

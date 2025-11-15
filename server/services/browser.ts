@@ -41,6 +41,7 @@ export class BrowserAutomation {
   private lastBoundingBox: BoundingBox | null = null;
   private baseUrl: string | null = null;
   private credentials: Credentials | null = null; // Stored for auto-fill during execution
+  private verificationCode: string | null = null; // Stored for 2FA/MFA auto-fill
 
   constructor(visualDiffDetector?: VisualDiffDetector) {
     this.visualDiffDetector = visualDiffDetector || null;
@@ -136,6 +137,7 @@ export class BrowserAutomation {
     analysis: TaskAnalysis,
     progressCallback?: (step: number, message: string) => void,
     credentials?: Credentials, // Credentials for auto-filling login/signup forms
+    verificationCode?: string, // 2FA/MFA verification code for auto-filling
   ): Promise<Screenshot[]> {
     if (!this.page || !this.waitManager) {
       throw new Error("Browser not initialized");
@@ -143,6 +145,7 @@ export class BrowserAutomation {
 
     this.baseUrl = analysis.startingUrl || null;
     this.credentials = credentials || null; // Store for use during form filling
+    this.verificationCode = verificationCode || null; // Store for 2FA/MFA auto-filling
 
     const screenshots: Screenshot[] = [];
     const plan = analysis.navigationPlan || [];
@@ -385,12 +388,12 @@ export class BrowserAutomation {
             "type",
           );
 
-          // Auto-fill credentials if available and this is a login/signup field
+          // Auto-fill credentials and verification codes if available
           let valueToType = step.value;
+          const selectorLower = step.selector.toLowerCase();
+          const descriptionLower = (step.description || "").toLowerCase();
+          
           if (this.credentials) {
-            const selectorLower = step.selector.toLowerCase();
-            const descriptionLower = (step.description || "").toLowerCase();
-            
             // Check if this is an email/username field
             if ((selectorLower.includes('email') || selectorLower.includes('username') || selectorLower.includes("type='email'") ||
                  descriptionLower.includes('email') || descriptionLower.includes('username')) &&
@@ -412,6 +415,18 @@ export class BrowserAutomation {
               valueToType = this.credentials.displayName;
               console.log(`[BrowserAutomation] Auto-filling name field`);
             }
+          }
+          
+          // Check if this is a verification code field (2FA/MFA)
+          if (this.verificationCode && 
+              (selectorLower.includes('code') || selectorLower.includes('verification') || 
+               selectorLower.includes('2fa') || selectorLower.includes('mfa') || 
+               selectorLower.includes('otp') || selectorLower.includes('token') ||
+               descriptionLower.includes('code') || descriptionLower.includes('verification') ||
+               descriptionLower.includes('2fa') || descriptionLower.includes('mfa') ||
+               descriptionLower.includes('otp') || descriptionLower.includes('token'))) {
+            valueToType = this.verificationCode;
+            console.log(`[BrowserAutomation] Auto-filling verification code field`);
           }
 
           await this.waitManager.withRetry(

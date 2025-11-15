@@ -49,11 +49,13 @@ export default function Home() {
       authPreference,
       cookies,
       credentials,
+      verificationCode,
     }: { 
       question: string; 
       authPreference: string;
       cookies?: Array<{ name: string; value: string; domain?: string; path?: string }>;
       credentials?: Credentials;
+      verificationCode?: string;
     }) => {
       // Update progress to show we're starting
       setProgress((prev) => ({
@@ -74,6 +76,7 @@ export default function Home() {
           authPreference,
           cookies,
           credentials,
+          verificationCode,
         },
       );
 
@@ -144,10 +147,11 @@ export default function Home() {
     question: string, 
     authPreference: string,
     cookies?: Array<{ name: string; value: string; domain?: string; path?: string }>,
-    credentials?: Credentials
+    credentials?: Credentials,
+    verificationCode?: string
   ) => {
     setWorkflow(null);
-    captureWorkflowMutation.mutate({ question, authPreference, cookies, credentials });
+    captureWorkflowMutation.mutate({ question, authPreference, cookies, credentials, verificationCode });
   };
 
   const handleImageClick = (screenshot: Screenshot) => {
