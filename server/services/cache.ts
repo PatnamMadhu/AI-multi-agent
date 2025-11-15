@@ -144,7 +144,7 @@ export const workflowCache = new LRUCache<WorkflowResponse>({
 });
 
 /* ────────────────────────────────────────────────────────────────
-   KEY GENERATION USING QUESTION + URL + AUTH + COOKIE HASH
+   KEY GENERATION USING QUESTION + URL + AUTH + COOKIE HASH + CREDENTIALS HASH
    ──────────────────────────────────────────────────────────────── */
 export function generateCacheKey(request: TaskRequest): string {
   const normalizedQuestion = request.question.trim().toLowerCase();
@@ -172,7 +172,22 @@ export function generateCacheKey(request: TaskRequest): string {
       .substring(0, 16);
   }
 
-  return `${normalizedQuestion}|${normalizedUrl}|${normalizedAuth}|${cookieHash}`;
+  let credentialsHash = "no-credentials";
+
+  if (request.credentials && (request.credentials.username || request.credentials.password || request.credentials.displayName)) {
+    const credentialData = JSON.stringify({
+      username: request.credentials.username || "",
+      password: request.credentials.password || "", // Include password in hash for cache isolation
+      displayName: request.credentials.displayName || "",
+    });
+
+    credentialsHash = createHash("sha256")
+      .update(credentialData)
+      .digest("hex")
+      .substring(0, 16);
+  }
+
+  return `${normalizedQuestion}|${normalizedUrl}|${normalizedAuth}|${cookieHash}|${credentialsHash}`;
 }
 
 /* ────────────────────────────────────────────────────────────────

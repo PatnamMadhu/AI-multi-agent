@@ -233,5 +233,7 @@ export interface WorkflowResponse {
   status: WorkflowStatus;
   timestamp: string;
   cacheHit?: boolean;
+  error?: string; // Alias for errorMessage
   errorMessage?: string;
+  processingDuration?: number; // Processing time in milliseconds
 }

@@ -3,6 +3,7 @@ import type {
   TaskAnalysis,
   NavigationStep,
   AuthPreference,
+  Credentials,
 } from "@shared/schema";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -10,6 +11,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 export async function analyzeTask(
   question: string,
   authPreference?: AuthPreference,
+  credentials?: Credentials,
 ): Promise<TaskAnalysis> {
   // Build authentication-specific instructions
   let authInstructions = "";
@@ -22,19 +24,39 @@ AUTH MODE: already-logged-in
 - Skip all login/signup forms
 - Go directly to the page needed for the main task (dashboard, project list, etc.)`;
   } else if (authPreference === "need-sign-in") {
-    authInstructions = `
+    if (credentials && (credentials.username || credentials.password)) {
+      authInstructions = `
+AUTH MODE: need-sign-in (with credentials)
+- Explicitly document AND PERFORM the sign-in flow
+- User provided credentials: ${credentials.username ? `username="${credentials.username}"` : ""} ${credentials.password ? "(password provided)" : ""}
+- Enter the ACTUAL credentials into the login form
+- Wait for login to complete (check for dashboard, profile, or redirect)
+- After successful login, continue with the main task.`;
+    } else {
+      authInstructions = `
 AUTH MODE: need-sign-in
 - Explicitly document the sign-in flow
 - Show where email/username and password are entered
 - Use placeholder text like "[User enters email]" – never real credentials
 - After sign-in, continue with the main task.`;
+    }
   } else if (authPreference === "need-sign-up") {
-    authInstructions = `
+    if (credentials && (credentials.username || credentials.password || credentials.displayName)) {
+      authInstructions = `
+AUTH MODE: need-sign-up (with credentials)
+- Explicitly document AND PERFORM the registration/sign-up flow
+- User provided credentials: ${credentials.displayName ? `name="${credentials.displayName}"` : ""} ${credentials.username ? `email="${credentials.username}"` : ""} ${credentials.password ? "(password provided)" : ""}
+- Enter the ACTUAL credentials into the sign-up form
+- Wait for registration to complete (email confirmation, redirect, etc.)
+- After successful registration, continue with the main task.`;
+    } else {
+      authInstructions = `
 AUTH MODE: need-sign-up
 - Explicitly document the registration/sign-up flow
 - Show required fields (email, name, password, etc.)
 - Use placeholder text for values
 - After registration, continue with the main task.`;
+    }
   } else {
     authInstructions = `
 AUTH MODE: auto-detect

@@ -57,7 +57,7 @@ export class WorkflowOrchestrator {
     let errorMessage: string | undefined;
 
     try {
-      analysis = await analyzeTask(request.question, request.authPreference);
+      analysis = await analyzeTask(request.question, request.authPreference, request.credentials);
 
       screenshots = await automation.executeNavigationPlan(
         analysis,
