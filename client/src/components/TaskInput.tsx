@@ -5,7 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Sparkles, Shield, Lock } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Sparkles, Shield, Lock, AlertCircle } from "lucide-react";
 import { AuthPreference, Credentials } from "@shared/schema";
 import { CookieImport } from "./CookieImport";
 
@@ -43,11 +44,14 @@ export function TaskInput({ onSubmit, isLoading }: TaskInputProps) {
     password: "",
     displayName: "",
   });
+  const [validationError, setValidationError] = useState<string | null>(null);
   const charCount = question.length;
   const maxChars = 500;
 
   const handleAuthPreferenceChange = (value: AuthPreference) => {
     setAuthPreference(value);
+    // Clear validation error when changing auth preference
+    setValidationError(null);
     // Clear cookies and reset CookieImport component when switching away from "already-logged-in" mode
     if (value !== "already-logged-in") {
       setCookies([]);
@@ -63,6 +67,15 @@ export function TaskInput({ onSubmit, isLoading }: TaskInputProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (question.trim() && !isLoading) {
+      // Validate: "already-logged-in" mode requires cookies
+      if (authPreference === "already-logged-in" && cookies.length === 0) {
+        setValidationError("Session cookies are required when using 'Already logged in' mode. Please import your browser cookies or select a different authentication option.");
+        return;
+      }
+      
+      // Clear any previous validation errors
+      setValidationError(null);
+      
       // Only send cookies if in "already-logged-in" mode
       const cookiesToSend = authPreference === "already-logged-in" && cookies.length > 0 ? cookies : undefined;
       
@@ -178,7 +191,13 @@ export function TaskInput({ onSubmit, isLoading }: TaskInputProps) {
         {authPreference === "already-logged-in" && (
           <CookieImport 
             key={`cookie-import-${cookieImportKey}`}
-            onCookiesChange={setCookies} 
+            onCookiesChange={(cookies) => {
+              setCookies(cookies);
+              // Clear validation error when cookies are successfully imported
+              if (cookies.length > 0) {
+                setValidationError(null);
+              }
+            }} 
             disabled={isLoading} 
           />
         )}
@@ -269,6 +288,13 @@ export function TaskInput({ onSubmit, isLoading }: TaskInputProps) {
           ))}
         </div>
       </div>
+
+      {validationError && (
+        <Alert variant="destructive" data-testid="alert-validation-error">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{validationError}</AlertDescription>
+        </Alert>
+      )}
 
       <Button
         type="submit"
