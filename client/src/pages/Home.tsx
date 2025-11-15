@@ -7,7 +7,7 @@ import { ScreenshotGallery } from "@/components/ScreenshotGallery";
 import { ImageModal } from "@/components/ImageModal";
 import { MetadataPanel } from "@/components/MetadataPanel";
 import { ErrorDisplay } from "@/components/ErrorDisplay";
-import { Screenshot, WorkflowResponse } from "@shared/schema";
+import { Screenshot, WorkflowResponse, Credentials } from "@shared/schema";
 import { Bot, Zap, Database } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -48,10 +48,12 @@ export default function Home() {
       question, 
       authPreference,
       cookies,
+      credentials,
     }: { 
       question: string; 
       authPreference: string;
       cookies?: Array<{ name: string; value: string; domain?: string; path?: string }>;
+      credentials?: Credentials;
     }) => {
       // Update progress to show we're starting
       setProgress((prev) => ({
@@ -71,6 +73,7 @@ export default function Home() {
           question,
           authPreference,
           cookies,
+          credentials,
         },
       );
 
@@ -140,10 +143,11 @@ export default function Home() {
   const handleTaskSubmit = async (
     question: string, 
     authPreference: string,
-    cookies?: Array<{ name: string; value: string; domain?: string; path?: string }>
+    cookies?: Array<{ name: string; value: string; domain?: string; path?: string }>,
+    credentials?: Credentials
   ) => {
     setWorkflow(null);
-    captureWorkflowMutation.mutate({ question, authPreference, cookies });
+    captureWorkflowMutation.mutate({ question, authPreference, cookies, credentials });
   };
 
   const handleImageClick = (screenshot: Screenshot) => {

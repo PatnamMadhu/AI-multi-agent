@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Sparkles, Shield } from "lucide-react";
-import { AuthPreference } from "@shared/schema";
+import { Sparkles, Shield, Lock } from "lucide-react";
+import { AuthPreference, Credentials } from "@shared/schema";
 import { CookieImport } from "./CookieImport";
 
 interface CookieData {
@@ -16,7 +17,12 @@ interface CookieData {
 }
 
 interface TaskInputProps {
-  onSubmit: (question: string, authPreference: AuthPreference, cookies?: CookieData[]) => void;
+  onSubmit: (
+    question: string, 
+    authPreference: AuthPreference, 
+    cookies?: CookieData[],
+    credentials?: Credentials
+  ) => void;
   isLoading: boolean;
 }
 
@@ -32,6 +38,11 @@ export function TaskInput({ onSubmit, isLoading }: TaskInputProps) {
   const [authPreference, setAuthPreference] = useState<AuthPreference>("auto-detect");
   const [cookies, setCookies] = useState<CookieData[]>([]);
   const [cookieImportKey, setCookieImportKey] = useState(0);
+  const [credentials, setCredentials] = useState<Credentials>({
+    username: "",
+    password: "",
+    displayName: "",
+  });
   const charCount = question.length;
   const maxChars = 500;
 
@@ -43,6 +54,10 @@ export function TaskInput({ onSubmit, isLoading }: TaskInputProps) {
       // Increment key to force CookieImport to remount with fresh state next time
       setCookieImportKey(prev => prev + 1);
     }
+    // Clear credentials when switching away from sign-in/sign-up modes
+    if (value !== "need-sign-in" && value !== "need-sign-up") {
+      setCredentials({ username: "", password: "", displayName: "" });
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -50,7 +65,15 @@ export function TaskInput({ onSubmit, isLoading }: TaskInputProps) {
     if (question.trim() && !isLoading) {
       // Only send cookies if in "already-logged-in" mode
       const cookiesToSend = authPreference === "already-logged-in" && cookies.length > 0 ? cookies : undefined;
-      onSubmit(question.trim(), authPreference, cookiesToSend);
+      
+      // Only send credentials if in sign-in/sign-up mode and credentials are provided
+      const credentialsToSend = 
+        (authPreference === "need-sign-in" || authPreference === "need-sign-up") && 
+        (credentials.username || credentials.password || credentials.displayName)
+          ? credentials
+          : undefined;
+      
+      onSubmit(question.trim(), authPreference, cookiesToSend, credentialsToSend);
     }
   };
 
@@ -158,6 +181,73 @@ export function TaskInput({ onSubmit, isLoading }: TaskInputProps) {
             onCookiesChange={setCookies} 
             disabled={isLoading} 
           />
+        )}
+
+        {(authPreference === "need-sign-in" || authPreference === "need-sign-up") && (
+          <div className="space-y-4 mt-4 p-4 rounded-md bg-muted/50 border">
+            <div className="flex items-center gap-2">
+              <Lock className="h-4 w-4 text-muted-foreground" />
+              <Label className="text-sm font-semibold">
+                {authPreference === "need-sign-up" ? "Sign Up Credentials" : "Sign In Credentials"}
+              </Label>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {authPreference === "need-sign-up" 
+                ? "Provide credentials to create an account and continue with the workflow"
+                : "Provide credentials to log in and continue with the workflow"}
+            </p>
+            
+            {authPreference === "need-sign-up" && (
+              <div className="space-y-2">
+                <Label htmlFor="displayName" className="text-sm font-medium">
+                  Display Name (optional)
+                </Label>
+                <Input
+                  id="displayName"
+                  data-testid="input-display-name"
+                  type="text"
+                  placeholder="John Doe"
+                  value={credentials.displayName}
+                  onChange={(e) => setCredentials(prev => ({ ...prev, displayName: e.target.value }))}
+                  disabled={isLoading}
+                />
+              </div>
+            )}
+            
+            <div className="space-y-2">
+              <Label htmlFor="username" className="text-sm font-medium">
+                Email or Username
+              </Label>
+              <Input
+                id="username"
+                data-testid="input-username"
+                type="text"
+                placeholder="you@example.com"
+                value={credentials.username}
+                onChange={(e) => setCredentials(prev => ({ ...prev, username: e.target.value }))}
+                disabled={isLoading}
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="password" className="text-sm font-medium">
+                Password
+              </Label>
+              <Input
+                id="password"
+                data-testid="input-password"
+                type="password"
+                placeholder="••••••••"
+                value={credentials.password}
+                onChange={(e) => setCredentials(prev => ({ ...prev, password: e.target.value }))}
+                disabled={isLoading}
+              />
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              Your credentials are used only to perform the workflow and are not stored.
+            </p>
+          </div>
         )}
       </div>
 
