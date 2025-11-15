@@ -71,12 +71,31 @@ AUTH MODE: need-sign-up
 - After registration, continue with the main task.`;
     }
   } else {
-    authInstructions = `
+    // Auto-detect mode - behavior changes based on whether credentials are provided
+    if (credentials && (credentials.username || credentials.password)) {
+      authInstructions = `
+AUTH MODE: auto-detect (credentials will be auto-filled)
+- FIRST step should be a "conditional" step that checks whether the user is logged in.
+- The condition MUST be based on the DOM (e.g. profile avatar, logout button, or presence of a dashboard element).
+- If logged in: go directly to the main flow (projects/tickets/boards/whatever matches the question).
+- If not logged in: CRITICAL - You MUST generate actual form interaction steps to perform login:
+  1. Navigate to the login page URL
+  2. Wait for login form to load (wait for email/username input)
+  3. Type into email/username field (action: "type", selector: "input[type='email']" or similar)
+  4. Type into password field (action: "type", selector: "input[type='password']")
+  5. Click the submit/login button (action: "click")
+  6. Wait for login to complete (check for dashboard, profile, or redirect)
+- The system will automatically replace the typed values with real credentials during execution
+- Use generic CSS selectors like: "input[type='email']", "input[name='email']", "input[type='password']", "button[type='submit']"
+- After successful login, continue with the main task.`;
+    } else {
+      authInstructions = `
 AUTH MODE: auto-detect
 - FIRST step should be a "conditional" step that checks whether the user is logged in.
 - The condition MUST be based on the DOM (e.g. profile avatar, logout button, or presence of a dashboard element).
 - If logged in: go directly to the main flow (projects/tickets/boards/whatever matches the question).
-- If not logged in: create steps for login, then continue with the main task.`;
+- If not logged in: create steps for login (document with placeholders), then continue with the main task.`;
+    }
   }
 
   const systemPrompt = `
