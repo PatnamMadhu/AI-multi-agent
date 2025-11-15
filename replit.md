@@ -75,12 +75,14 @@ The system provides flexible authentication handling with manual user control:
   - Workflows with credentials are NOT cached to prevent credential persistence
   - Works with standard login forms and can be combined with OAuth buttons
 - **Cookie Import Feature** (Nov 2025): When "Already logged in" is selected:
+  - **Validation Required**: Frontend validation enforces cookie requirement - submission is blocked with a clear error message if no cookies are provided
   - Collapsible UI allows users to paste browser cookies exported from extensions
   - Supports two formats: JSON array `[{"name":"...","value":"..."}]` and cookie format `name=value; domain=...; path=...`
   - Validates and parses cookies with clear error messages
   - Component state automatically resets when switching auth modes (prevents data leaks)
   - Cookies are only transmitted to backend when in "already-logged-in" mode
   - Supports OAuth provider cookies (Google, GitHub, etc.) for session reuse across apps
+  - **Error Handling**: Validation error clears automatically when cookies are imported or auth mode is changed
 - **OAuth Popup Handling** (Nov 2025):
   - Automatically detects OAuth buttons ("Continue with Google", "Sign in with GitHub", etc.)
   - Handles popup windows for OAuth providers (Google, GitHub, Microsoft, Apple)
