@@ -1,82 +1,65 @@
-/**
- * Base class for workflow execution errors
- */
 export class WorkflowError extends Error {
-  constructor(message: string, public readonly stepNumber?: number) {
+  constructor(message: string) {
     super(message);
     this.name = "WorkflowError";
   }
 }
 
-/**
- * Errors that can be retried (transient failures)
- */
-export class RetryableError extends WorkflowError {
-  constructor(message: string, stepNumber?: number, public readonly attempt?: number) {
-    super(message, stepNumber);
-    this.name = "RetryableError";
+export class NavigationError extends WorkflowError {
+  url: string;
+  stepNumber?: number;
+
+  constructor(url: string, message: string, stepNumber?: number) {
+    super(`Navigation to "${url}" failed: ${message}`);
+    this.name = "NavigationError";
+    this.url = url;
+    this.stepNumber = stepNumber;
   }
 }
 
-/**
- * Errors that should not be retried (permanent failures)
- */
-export class NonRetryableError extends WorkflowError {
-  constructor(message: string, stepNumber?: number) {
-    super(message, stepNumber);
-    this.name = "NonRetryableError";
+export class ElementNotFoundError extends WorkflowError {
+  selector: string;
+  stepNumber?: number;
+
+  constructor(selector: string, stepNumber?: number) {
+    super(`Element not found: ${selector}`);
+    this.name = "ElementNotFoundError";
+    this.selector = selector;
+    this.stepNumber = stepNumber;
   }
 }
 
-/**
- * Specific error for wait/selector timeouts
- */
-export class WaitTimeoutError extends RetryableError {
-  constructor(selector: string, timeout: number, stepNumber?: number) {
-    super(`Timeout waiting for selector "${selector}" after ${timeout}ms`, stepNumber);
+export class WaitTimeoutError extends WorkflowError {
+  constructor(message: string) {
+    super(message);
     this.name = "WaitTimeoutError";
   }
 }
 
 /**
- * Specific error for element not found/visible
+ * Decide whether an error is safe to retry.
  */
-export class ElementNotFoundError extends RetryableError {
-  constructor(selector: string, stepNumber?: number) {
-    super(`Element not found or not visible: "${selector}"`, stepNumber);
-    this.name = "ElementNotFoundError";
-  }
-}
+export function isRetryableError(err: unknown): boolean {
+  if (!err) return false;
 
-/**
- * Navigation failures (usually non-retryable)
- */
-export class NavigationError extends NonRetryableError {
-  constructor(url: string, reason: string, stepNumber?: number) {
-    super(`Navigation to "${url}" failed: ${reason}`, stepNumber);
-    this.name = "NavigationError";
-  }
-}
-
-/**
- * Check if an error is retryable
- */
-export function isRetryableError(error: unknown): error is RetryableError {
-  if (error instanceof RetryableError) {
+  if (
+    err instanceof ElementNotFoundError ||
+    err instanceof NavigationError ||
+    err instanceof WaitTimeoutError
+  ) {
     return true;
   }
 
-  // Check error message for known retryable patterns
-  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
-  const retryablePatterns = [
-    "timeout",
-    "waiting for selector",
-    "no node found",
-    "cannot find element",
-    "element is not visible",
-    "element is not attached",
-    "detached from document",
-  ];
+  if (err instanceof Error) {
+    const msg = err.message.toLowerCase();
+    if (
+      msg.includes("timeout") ||
+      msg.includes("failed to find") ||
+      msg.includes("waiting for selector")
+    ) {
+      return true;
+    }
+  }
 
-  return retryablePatterns.some((pattern) => message.includes(pattern));
+  return false;
 }

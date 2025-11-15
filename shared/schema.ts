@@ -1,194 +1,179 @@
-import { z } from "zod";
+import {
+  pgTable,
+  text,
+  varchar,
+  uuid,
+  jsonb,
+  timestamp,
+  serial,
+  boolean,
+  integer,
+} from "drizzle-orm/pg-core";
 
-// Schema for visual diff configuration
-export const visualDiffConfigSchema = z.object({
-  disabled: z.boolean().optional(),
-  similarityThreshold: z.number().min(0).max(1).optional(),
-}).optional();
-
-export type VisualDiffConfig = z.infer<typeof visualDiffConfigSchema>;
-
-// Schema for authentication preference
-export const authPreferenceSchema = z.enum([
-  "auto-detect",
-  "already-logged-in",
-  "need-sign-in",
-  "need-sign-up"
-]);
-
-export type AuthPreference = z.infer<typeof authPreferenceSchema>;
-
-// Schema for capturing workflow tasks
-export const taskRequestSchema = z.object({
-  question: z.string().min(1, "Question is required"),
-  targetUrl: z.string().url("Valid URL is required").optional(),
-  cookies: z.array(z.object({
-    name: z.string(),
-    value: z.string(),
-    domain: z.string().optional(),
-    path: z.string().optional(),
-  })).optional(),
-  visualDiff: visualDiffConfigSchema,
-  authPreference: authPreferenceSchema.optional(),
+/* -------------------------------------------------------
+   WORKFLOW SESSION (one run of "How do I create X…")
+------------------------------------------------------- */
+export const workflowSessions = pgTable("workflow_sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  question: text("question").notNull(),
+  authPreference: varchar("auth_preference", { length: 50 }),
+  startingUrl: text("starting_url"),
+  cacheHit: boolean("cache_hit").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
-export type TaskRequest = z.infer<typeof taskRequestSchema>;
+/* -------------------------------------------------------
+   SCREENSHOTS (one-to-many → session)
+------------------------------------------------------- */
+export const workflowScreenshots = pgTable("workflow_screenshots", {
+  id: serial("id").primaryKey(),
+  sessionId: uuid("session_id")
+    .notNull()
+    .references(() => workflowSessions.id),
+  stepNumber: integer("step_number").notNull(),
+  description: text("description").notNull(),
+  url: text("url"),
+  imageBase64: text("image_base64").notNull(),
+  annotations: jsonb("annotations"), // bounding boxes
+  createdAt: timestamp("created_at").defaultNow(),
+});
 
-// Define base navigation step type
-type BaseNavigationStep = {
+/* -------------------------------------------------------
+   CACHED WORKFLOWS (optional DB cache)
+------------------------------------------------------- */
+export const workflowCacheTable = pgTable("workflow_cache", {
+  cacheKey: varchar("cache_key", { length: 255 }).primaryKey(),
+  question: text("question").notNull(),
+  response: jsonb("response").notNull(), // full WorkflowResponse JSON
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+/* -------------------------------------------------------
+   OPENAI NAVIGATION ANALYSIS LOG
+------------------------------------------------------- */
+export const openaiAnalysisLog = pgTable("openai_analysis_log", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  question: text("question").notNull(),
+  model: varchar("model", { length: 100 }),
+  analysis: jsonb("analysis").notNull(), // {startingUrl, plan, steps}
+  tokensUsed: integer("tokens_used"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+/* -------------------------------------------------------
+   Drizzle row types
+------------------------------------------------------- */
+
+export type WorkflowSession = typeof workflowSessions.$inferSelect;
+export type WorkflowScreenshot = typeof workflowScreenshots.$inferSelect;
+export type WorkflowCacheRow = typeof workflowCacheTable.$inferSelect;
+export type OpenAIAnalysisLogRow = typeof openaiAnalysisLog.$inferSelect;
+
+/* -------------------------------------------------------
+   Shared TS types for client + server
+------------------------------------------------------- */
+
+export interface BoundingBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  label?: string;
+}
+
+export interface Screenshot {
   stepNumber: number;
-  action: string;
+  description: string;
+  imageBase64: string;
+  url?: string;
+  annotations?: BoundingBox[];
+  timestamp: string;
+}
+
+export type ActionType =
+  | "navigate"
+  | "click"
+  | "type"
+  | "wait"
+  | "screenshot"
+  | "conditional";
+
+export interface NavigationStep {
+  stepNumber: number;
+  action: ActionType;
   description: string;
   selector?: string;
   value?: string;
   waitFor?: string;
-};
-
-// Discriminated union for conditional branches
-export type ConditionalBranch =
-  | {
-      type: "if-else" | "element-exists" | "text-contains" | "url-matches";
-      condition: string;
-      selector?: string;
-      expectedValue?: string;
-      ifBranch: NavigationStep[];
-      elseBranch?: NavigationStep[];
-    }
-  | {
-      type: "switch-case";
-      condition: string;
-      selector?: string;
-      expectedValue?: string;
-      cases: Array<{ matchValue: string; steps: NavigationStep[] }>;
-      defaultBranch?: NavigationStep[];
-    };
-
-export type NavigationStep = BaseNavigationStep & {
   conditional?: ConditionalBranch;
-};
+}
 
-// Base navigation step schema without conditional
-const baseNavigationStepSchema = z.object({
-  stepNumber: z.number(),
-  action: z.string(),
-  description: z.string(),
-  selector: z.string().optional(),
-  value: z.string().optional(),
-  waitFor: z.string().optional(),
-});
+export interface ConditionalCase {
+  matchValue: string;
+  steps: NavigationStep[];
+}
 
-// Schema for switch-case branches
-const switchCaseSchema: z.ZodType<{ matchValue: string; steps: NavigationStep[] }> = z.object({
-  matchValue: z.string(),
-  steps: z.array(z.lazy(() => navigationStepSchema as any)),
-}) as any;
+export interface ConditionalBranch {
+  type:
+    | "element-exists"
+    | "text-contains"
+    | "url-matches"
+    | "if-else"
+    | "switch-case";
+  selector?: string;
+  expectedValue?: string; // For text / url checks
+  ifBranch: NavigationStep[];
+  elseBranch?: NavigationStep[];
+  cases?: ConditionalCase[];
+  defaultBranch?: NavigationStep[];
+}
 
-// Binary conditional schema (if-else, element-exists, etc.)
-const binaryConditionalSchema: z.ZodType<Extract<ConditionalBranch, { type: "if-else" }>> = z.object({
-  type: z.enum(["if-else", "element-exists", "text-contains", "url-matches"]),
-  condition: z.string(),
-  selector: z.string().optional(),
-  expectedValue: z.string().optional(),
-  ifBranch: z.array(z.lazy(() => navigationStepSchema as any)),
-  elseBranch: z.array(z.lazy(() => navigationStepSchema as any)).optional(),
-}) as any;
+export type AuthPreference =
+  | "auto-detect"
+  | "already-logged-in"
+  | "need-sign-in"
+  | "need-sign-up";
 
-// Switch-case conditional schema
-const switchCaseConditionalSchema: z.ZodType<Extract<ConditionalBranch, { type: "switch-case" }>> = z.object({
-  type: z.literal("switch-case"),
-  condition: z.string(),
-  selector: z.string().optional(),
-  expectedValue: z.string().optional(),
-  cases: z.array(switchCaseSchema),
-  defaultBranch: z.array(z.lazy(() => navigationStepSchema as any)).optional(),
-}) as any;
+export interface TaskAnalysis {
+  targetApplication: string;
+  estimatedSteps: number;
+  startingUrl: string;
+  navigationPlan: NavigationStep[];
+}
 
-// Discriminated union for conditional branch schema
-const conditionalBranchSchema: z.ZodType<ConditionalBranch> = z.discriminatedUnion("type", [
-  binaryConditionalSchema as any,
-  switchCaseConditionalSchema as any,
-]) as any;
+export interface CookieData {
+  name: string;
+  value: string;
+  domain?: string;
+  path?: string;
+  secure?: boolean;
+  httpOnly?: boolean;
+  sameSite?: "Lax" | "Strict" | "None" | "lax" | "strict" | "none";
+}
 
-// Complete navigation step schema with conditional support
-export const navigationStepSchema: z.ZodType<NavigationStep> = baseNavigationStepSchema.extend({
-  conditional: conditionalBranchSchema.optional(),
-}) as any;
+export interface VisualDiffConfig {
+  similarityThreshold?: number;
+  disabled?: boolean;
+}
 
-// Schema for bounding box annotation
-export const boundingBoxSchema = z.object({
-  x: z.number(),
-  y: z.number(),
-  width: z.number(),
-  height: z.number(),
-  label: z.string().optional(), // e.g., "click", "type", "hover"
-});
+export interface TaskRequest {
+  question: string;
+  targetUrl?: string;
+  cookies?: CookieData[];
+  visualDiff?: VisualDiffConfig;
+  authPreference?: AuthPreference;
+}
 
-export type BoundingBox = z.infer<typeof boundingBoxSchema>;
+export type WorkflowStatus = "success" | "partial" | "failed";
 
-// Schema for captured screenshots
-export const screenshotSchema = z.object({
-  stepNumber: z.number(),
-  description: z.string(),
-  imageBase64: z.string(),
-  timestamp: z.string(),
-  url: z.string().optional(),
-  annotations: z.array(boundingBoxSchema).optional(), // Element annotations
-});
-
-export type Screenshot = z.infer<typeof screenshotSchema>;
-
-// Schema for task analysis result from LLM
-export const taskAnalysisSchema = z.object({
-  targetApplication: z.string(),
-  estimatedSteps: z.number(),
-  navigationPlan: z.array(navigationStepSchema),
-  startingUrl: z.string(),
-});
-
-export type TaskAnalysis = z.infer<typeof taskAnalysisSchema>;
-
-// Schema for duplicate detection metadata
-export const duplicateInfoSchema = z.object({
-  stepNumber: z.number(),
-  originalStepNumber: z.number(),
-  similarity: z.number(),
-  reason: z.string(),
-});
-
-export type DuplicateInfo = z.infer<typeof duplicateInfoSchema>;
-
-// Schema for visual diff metadata in response
-export const visualDiffMetadataSchema = z.object({
-  duplicates: z.array(duplicateInfoSchema),
-  totalScreenshots: z.number(),
-  uniqueScreenshots: z.number(),
-  duplicatesSkipped: z.number(),
-});
-
-export type VisualDiffMetadata = z.infer<typeof visualDiffMetadataSchema>;
-
-// Schema for the complete workflow response
-export const workflowResponseSchema = z.object({
-  taskId: z.string(),
-  question: z.string(),
-  analysis: taskAnalysisSchema,
-  screenshots: z.array(screenshotSchema),
-  processingDuration: z.number(),
-  completedAt: z.string(),
-  status: z.enum(["success", "partial", "failed"]),
-  error: z.string().optional(),
-  visualDiff: visualDiffMetadataSchema.optional(),
-  cacheHit: z.boolean().optional(), // Indicates if result came from cache
-});
-
-export type WorkflowResponse = z.infer<typeof workflowResponseSchema>;
-
-// Schema for real-time progress updates
-export const progressUpdateSchema = z.object({
-  currentStep: z.number(),
-  totalSteps: z.number(),
-  status: z.string(),
-  message: z.string(),
-});
-
-export type ProgressUpdate = z.infer<typeof progressUpdateSchema>;
+export interface WorkflowResponse {
+  taskId: string;
+  question: string;
+  screenshots: Screenshot[];
+  analysis?: TaskAnalysis;
+  status: WorkflowStatus;
+  timestamp: string;
+  cacheHit?: boolean;
+  errorMessage?: string;
+}

@@ -1,5 +1,5 @@
 import puppeteer, { Browser, Page } from "puppeteer";
-import {
+import type {
   NavigationStep,
   Screenshot,
   TaskAnalysis,
@@ -14,9 +14,6 @@ import {
 import { VisualDiffDetector } from "./visualDiff";
 import { evaluateConditional } from "./conditionalEvaluator";
 
-/**
- * Type guard for Puppeteer lifecycle events
- */
 const validWaitUntilEvents = [
   "load",
   "domcontentloaded",
@@ -39,6 +36,7 @@ export class BrowserAutomation {
   private waitManager: WaitManager | null = null;
   private visualDiffDetector: VisualDiffDetector | null = null;
   private lastBoundingBox: BoundingBox | null = null;
+  private baseUrl: string | null = null;
 
   constructor(visualDiffDetector?: VisualDiffDetector) {
     this.visualDiffDetector = visualDiffDetector || null;
@@ -47,7 +45,8 @@ export class BrowserAutomation {
   async initialize(): Promise<void> {
     this.browser = await puppeteer.launch({
       headless: true,
-      executablePath: "/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.0.6422.141/bin/chromium",
+      executablePath:
+        "/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.0.6422.141/bin/chromium",
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
@@ -64,9 +63,57 @@ export class BrowserAutomation {
       height: 720,
       deviceScaleFactor: 1,
     });
+
     await this.page.setUserAgent(
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     );
+  }
+
+  async setCookies(cookies: any[]): Promise<void> {
+    if (!this.page) throw new Error("Page not initialized");
+    if (!cookies || cookies.length === 0) return;
+
+    console.log(
+      `[BrowserAutomation] Applying ${cookies.length} session cookies before navigation`,
+    );
+    await this.page.setCookie(...cookies);
+  }
+
+  private resolveUrl(rawUrl: string): string {
+    if (!rawUrl) return "";
+
+    // Absolute URL
+    if (/^https?:\/\//i.test(rawUrl)) {
+      return rawUrl;
+    }
+
+    // If it starts with "/" – resolve against baseUrl or current page
+    if (rawUrl.startsWith("/")) {
+      const base = this.baseUrl || (this.page ? this.page.url() : "");
+      try {
+        if (base && base.startsWith("http")) {
+          const u = new URL(base);
+          u.pathname = rawUrl;
+          u.search = "";
+          u.hash = "";
+          return u.toString();
+        }
+      } catch {
+        // fall through
+      }
+    }
+
+    // Fallback: resolve relative to current page
+    if (this.page) {
+      const current = this.page.url();
+      try {
+        return new URL(rawUrl, current).toString();
+      } catch {
+        return rawUrl;
+      }
+    }
+
+    return rawUrl;
   }
 
   async executeNavigationPlan(
@@ -77,25 +124,27 @@ export class BrowserAutomation {
       throw new Error("Browser not initialized");
     }
 
-    const screenshots: Screenshot[] = [];
-    const plan = analysis.navigationPlan;
+    this.baseUrl = analysis.startingUrl || null;
 
-    // Navigate to starting URL
+    const screenshots: Screenshot[] = [];
+    const plan = analysis.navigationPlan || [];
+
+    // Starting URL navigation
     if (analysis.startingUrl && analysis.startingUrl !== "about:blank") {
+      const url = this.resolveUrl(analysis.startingUrl);
       try {
-        await this.waitManager.onNavigationStart();
-        await this.page.goto(analysis.startingUrl, {
+        this.waitManager.onNavigationStart();
+        await this.page.goto(url, {
           waitUntil: "networkidle2",
           timeout: 30000,
         });
-        await this.waitManager.onNavigationEnd();
+        this.waitManager.onNavigationEnd();
         await this.waitManager.waitForStability({ timeout: 3000 });
       } catch (error) {
         console.error("Error navigating to starting URL:", error);
       }
     }
 
-    // Execute navigation plan
     for (let i = 0; i < plan.length; i++) {
       const step = plan[i];
 
@@ -104,8 +153,8 @@ export class BrowserAutomation {
       }
 
       try {
-        const stepScreenshots = await this.executeStepWithScreenshots(step);
-        screenshots.push(...stepScreenshots);
+        const stepScreens = await this.executeStepWithScreenshots(step);
+        screenshots.push(...stepScreens);
       } catch (error) {
         const retryable = isRetryableError(error);
         console.error(
@@ -113,17 +162,20 @@ export class BrowserAutomation {
           error,
         );
 
+        // Capture error screenshot for debugging
         try {
-          const errorScreenshot = await this.captureScreenshot({
+          const errorShot = await this.captureScreenshot({
             ...step,
             description: `${step.description} (Error: ${
               error instanceof Error ? error.message : String(error)
             })`,
           });
-          if (errorScreenshot) screenshots.push(errorScreenshot);
-        } catch (screenshotError) {
-          console.error("Failed to capture error screenshot:", screenshotError);
+          if (errorShot) screenshots.push(errorShot);
+        } catch (shotErr) {
+          console.error("Failed to capture error screenshot:", shotErr);
         }
+
+        // For now, continue to next step even on error.
       }
     }
 
@@ -135,49 +187,57 @@ export class BrowserAutomation {
   ): Promise<Screenshot[]> {
     const screenshots: Screenshot[] = [];
 
+    if (!this.page || !this.waitManager) {
+      throw new Error("Browser not initialized");
+    }
+
     if (!step.action) {
       console.warn(`[Step ${step.stepNumber}] Missing action, skipping`);
       return screenshots;
     }
 
     if (step.action.toLowerCase() === "conditional") {
-      if (!this.page)
-        throw new Error("Page not initialized - cannot evaluate conditional");
-
-      if (step.conditional) {
-        console.log(
-          `[Step ${step.stepNumber}] Evaluating conditional: ${step.description}`,
-        );
-        const branchSteps = await evaluateConditional(
-          step.conditional,
-          this.page,
-        );
-
-        for (const branchStep of branchSteps) {
-          const branchScreens =
-            await this.executeStepWithScreenshots(branchStep);
-          screenshots.push(...branchScreens);
-        }
-      } else {
+      if (!step.conditional) {
         console.warn(
-          `[Step ${step.stepNumber}] Conditional step missing conditional field`,
+          `[Step ${step.stepNumber}] Conditional step missing "conditional" field`,
         );
+        return screenshots;
       }
-    } else {
-      await this.executeStep(step);
-      const shot = await this.captureScreenshot(step);
-      if (shot) screenshots.push(shot);
+
+      console.log(
+        `[Step ${step.stepNumber}] Evaluating conditional: ${step.description}`,
+      );
+
+      const branchSteps = await evaluateConditional(
+        step.conditional,
+        this.page,
+      );
+
+      for (const bStep of branchSteps) {
+        const branchScreens = await this.executeStepWithScreenshots(bStep);
+        screenshots.push(...branchScreens);
+      }
+
+      return screenshots;
     }
+
+    // Non-conditional step
+    await this.executeStep(step);
+
+    const shot = await this.captureScreenshot(step);
+    if (shot) screenshots.push(shot);
 
     return screenshots;
   }
 
   private async executeStep(step: NavigationStep): Promise<void> {
     if (!this.page || !this.waitManager) {
-      throw new Error("Page or WaitManager not initialized");
+      throw new Error("Browser or WaitManager not initialized");
     }
 
-    switch (step.action.toLowerCase()) {
+    const action = step.action.toLowerCase();
+
+    switch (action) {
       case "navigate":
         await this.handleNavigate(step);
         break;
@@ -187,6 +247,7 @@ export class BrowserAutomation {
           await this.waitManager.waitForSelector(step.selector, {
             timeout: 10000,
           });
+
           this.lastBoundingBox = await this.captureBoundingBox(
             step.selector,
             "click",
@@ -215,6 +276,7 @@ export class BrowserAutomation {
           await this.waitManager.waitForSelector(step.selector, {
             timeout: 10000,
           });
+
           this.lastBoundingBox = await this.captureBoundingBox(
             step.selector,
             "type",
@@ -223,7 +285,9 @@ export class BrowserAutomation {
           await this.waitManager.withRetry(
             async () => {
               try {
-                await this.page!.click(step.selector!, { clickCount: 3 });
+                await this.page!.click(step.selector!, {
+                  clickCount: 3,
+                });
                 await this.page!.type(step.selector!, step.value!, {
                   delay: 50,
                 });
@@ -247,7 +311,7 @@ export class BrowserAutomation {
             timeout: 15000,
           });
         } else {
-          const waitTime = parseInt(step.value || "2000");
+          const waitTime = parseInt(step.value || "2000", 10);
           await new Promise((resolve) => setTimeout(resolve, waitTime));
         }
         break;
@@ -261,13 +325,18 @@ export class BrowserAutomation {
     }
   }
 
-  /**
-   * Safe navigation logic with selector fallback.
-   */
   private async handleNavigate(step: NavigationStep): Promise<void> {
-    const url = step.value || step.selector;
+    if (!this.page || !this.waitManager) {
+      throw new Error("Browser or WaitManager not initialized");
+    }
+
+    const rawUrl = step.value || step.selector || "";
+    const url = this.resolveUrl(rawUrl);
+
     if (!url || url === "about:blank") {
-      console.warn(`Navigation step ${step.stepNumber} missing or invalid URL`);
+      console.warn(
+        `Navigation step ${step.stepNumber} missing or invalid URL: "${rawUrl}"`,
+      );
       return;
     }
 
@@ -275,28 +344,29 @@ export class BrowserAutomation {
     const isLifecycleEvent = isWaitUntilEvent(waitFor);
 
     try {
-      await this.waitManager!.onNavigationStart();
+      this.waitManager.onNavigationStart();
 
-      const response = await this.page!.goto(url, {
+      const response = await this.page.goto(url, {
         waitUntil: isLifecycleEvent ? waitFor : "networkidle2",
         timeout: 30000,
       });
 
-      this.waitManager!.onNavigationEnd();
+      this.waitManager.onNavigationEnd();
 
       if (!response || !response.ok()) {
         console.warn(
-          `[BrowserAutomation] Navigation to ${url} returned status: ${response ? response.status() : "no response"}`,
+          `[BrowserAutomation] Navigation to ${url} returned status: ${
+            response ? response.status() : "no response"
+          }`,
         );
       }
 
-      // If waitFor is a selector, wait for it explicitly
       if (waitFor && !isLifecycleEvent) {
         console.log(`[BrowserAutomation] Waiting for selector: ${waitFor}`);
-        await this.page!.waitForSelector(waitFor, { timeout: 10000 });
+        await this.page.waitForSelector(waitFor, { timeout: 10000 });
       }
 
-      await this.waitManager!.waitForStability({ timeout: 3000 });
+      await this.waitManager.waitForStability({ timeout: 3000 });
     } catch (error) {
       throw new NavigationError(
         url,
@@ -317,7 +387,12 @@ export class BrowserAutomation {
         const el = document.querySelector(sel);
         if (!el) return null;
         const rect = el.getBoundingClientRect();
-        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+        return {
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: rect.height,
+        };
       }, selector);
 
       return box ? { ...box, label } : null;
@@ -375,16 +450,12 @@ export class BrowserAutomation {
     };
   }
 
-  async setCookies(cookies: any[]): Promise<void> {
-    if (!this.page) throw new Error("Page not initialized");
-    await this.page.setCookie(...cookies);
-  }
-
   async close(): Promise<void> {
     if (this.browser) {
       await this.browser.close();
       this.browser = null;
       this.page = null;
+      this.waitManager = null;
     }
   }
 }

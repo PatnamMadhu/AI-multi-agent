@@ -22,198 +22,177 @@ interface CookieImportProps {
   disabled?: boolean;
 }
 
+function parseCookiesInput(input: string): CookieData[] {
+  const trimmed = input.trim();
+  if (!trimmed) return [];
+
+  // 1) Try JSON format first
+  try {
+    const parsed = JSON.parse(trimmed);
+
+    if (!Array.isArray(parsed)) {
+      throw new Error("JSON root must be an array");
+    }
+
+    const cookies: CookieData[] = parsed.map((raw: any) => {
+      if (!raw.name || !raw.value) {
+        throw new Error("Each cookie must have name and value");
+      }
+      return {
+        name: String(raw.name),
+        value: String(raw.value),
+        domain: raw.domain ? String(raw.domain) : undefined,
+        path: raw.path ? String(raw.path) : "/",
+      };
+    });
+
+    if (cookies.length === 0) {
+      throw new Error("No cookies found in JSON");
+    }
+
+    return cookies;
+  } catch {
+    // fall through to Netscape-style parsing
+  }
+
+  // 2) Try "name=value; domain=...; path=..." per line
+  const lines = trimmed
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+
+  const cookies: CookieData[] = [];
+
+  for (const line of lines) {
+    const [nameValuePart, ...attrParts] = line.split(";");
+    const [name, value] = nameValuePart.split("=").map((s) => s.trim());
+
+    if (!name || typeof value === "undefined") {
+      throw new Error(`Invalid cookie line: "${line}"`);
+    }
+
+    const cookie: CookieData = { name, value, path: "/" };
+
+    for (const attr of attrParts) {
+      const [attrNameRaw, attrValueRaw] = attr.split("=").map((s) => s.trim());
+      const attrName = attrNameRaw?.toLowerCase();
+      const attrValue = attrValueRaw ?? "";
+
+      if (!attrName) continue;
+
+      if (attrName === "domain") {
+        cookie.domain = attrValue;
+      } else if (attrName === "path") {
+        cookie.path = attrValue || "/";
+      }
+    }
+
+    cookies.push(cookie);
+  }
+
+  if (cookies.length === 0) {
+    throw new Error("No cookies parsed from text");
+  }
+
+  return cookies;
+}
+
 export function CookieImport({ onCookiesChange, disabled }: CookieImportProps) {
   const [cookieInput, setCookieInput] = useState("");
-  const [parsedCookies, setParsedCookies] = useState<CookieData[]>([]);
   const [parseError, setParseError] = useState<string | null>(null);
-  const [isOpen, setIsOpen] = useState(false);
-
-  const parseCookies = (input: string): CookieData[] | null => {
-    if (!input.trim()) {
-      return [];
-    }
-
-    try {
-      // Try parsing as JSON array first
-      const parsed = JSON.parse(input);
-      if (Array.isArray(parsed)) {
-        // Validate each cookie has required fields
-        const cookies = parsed.map((cookie) => {
-          if (!cookie.name || !cookie.value) {
-            throw new Error("Each cookie must have 'name' and 'value' fields");
-          }
-          return {
-            name: cookie.name,
-            value: cookie.value,
-            domain: cookie.domain,
-            path: cookie.path,
-          };
-        });
-        return cookies;
-      }
-      throw new Error("Input must be a JSON array of cookies");
-    } catch (jsonError) {
-      // Try parsing as Netscape cookie format (name=value; domain=...; path=...)
-      try {
-        const lines = input.split("\n").filter((line) => line.trim());
-        const cookies: CookieData[] = [];
-
-        for (const line of lines) {
-          const parts = line.split(";").map((p) => p.trim());
-          if (parts.length === 0) continue;
-
-          // First part should be name=value
-          const [nameValue, ...attributes] = parts;
-          const [name, ...valueParts] = nameValue.split("=");
-          const value = valueParts.join("="); // Handle values with = in them
-
-          if (!name || !value) {
-            throw new Error(
-              "Invalid cookie format. Each line should start with name=value",
-            );
-          }
-
-          const cookie: CookieData = { name: name.trim(), value: value.trim() };
-
-          // Parse optional attributes
-          for (const attr of attributes) {
-            const [key, val] = attr.split("=").map((s) => s.trim());
-            if (key.toLowerCase() === "domain" && val) {
-              cookie.domain = val;
-            } else if (key.toLowerCase() === "path" && val) {
-              cookie.path = val;
-            }
-          }
-
-          cookies.push(cookie);
-        }
-
-        if (cookies.length === 0) {
-          throw new Error("No valid cookies found");
-        }
-
-        return cookies;
-      } catch (netscapeError) {
-        throw new Error(
-          `Failed to parse cookies. Supported formats:\n1. JSON: [{"name":"...", "value":"...", "domain":"...", "path":"..."}]\n2. Cookie format: name=value; domain=...; path=...`,
-        );
-      }
-    }
-  };
+  const [parsedCookies, setParsedCookies] = useState<CookieData[]>([]);
+  const [open, setOpen] = useState(false);
 
   const handleParse = () => {
-    setParseError(null);
     try {
-      const cookies = parseCookies(cookieInput);
-      if (cookies === null) {
-        throw new Error("Failed to parse cookies");
-      }
+      setParseError(null);
+
+      const cookies = parseCookiesInput(cookieInput);
       setParsedCookies(cookies);
       onCookiesChange(cookies);
-      if (cookies.length > 0) {
-        setParseError(null);
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      setParseError(message);
+
+      console.log("[CookieImport] Parsed cookies:", cookies);
+    } catch (err) {
+      console.error("[CookieImport] Failed to parse cookies:", err);
       setParsedCookies([]);
       onCookiesChange([]);
-    }
-  };
 
-  const handleClear = () => {
-    setCookieInput("");
-    setParsedCookies([]);
-    setParseError(null);
-    onCookiesChange([]);
+      setParseError(
+        "Failed to parse cookies. Supported formats:\n" +
+          '1. JSON: [{"name":"...", "value":"...", "domain":"...", "path":"/"}]\n' +
+          "2. Cookie format: name=value; domain=...; path=/",
+      );
+    }
   };
 
   return (
-    <div className="space-y-3">
-      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+    <div className="space-y-2">
+      <Collapsible open={open} onOpenChange={setOpen}>
         <CollapsibleTrigger asChild>
-          <Button
+          <button
             type="button"
-            variant="outline"
-            className="w-full justify-between"
-            disabled={disabled}
-            data-testid="button-toggle-cookie-import"
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition"
           >
-            <div className="flex items-center gap-2">
-              <Cookie className="h-4 w-4" />
-              <span>
-                Import Session Cookies {parsedCookies.length > 0 && `(${parsedCookies.length})`}
-              </span>
-            </div>
-            <span className="text-xs text-muted-foreground">
-              {isOpen ? "Hide" : "Show"}
-            </span>
-          </Button>
+            <Cookie className="h-4 w-4" />
+            <span>Import session cookies (optional)</span>
+          </button>
         </CollapsibleTrigger>
 
-        <CollapsibleContent className="space-y-3 mt-3">
-          <Alert>
-            <Info className="h-4 w-4" />
-            <AlertDescription className="text-xs">
-              <strong>How to export cookies from your browser:</strong>
-              <ol className="list-decimal list-inside mt-2 space-y-1">
-                <li>
-                  Install a cookie export extension (e.g., "EditThisCookie" or "Cookie-Editor")
-                </li>
-                <li>Navigate to the website you're logged into</li>
-                <li>Click the extension and export cookies as JSON</li>
-                <li>Paste the exported JSON below</li>
-              </ol>
-            </AlertDescription>
-          </Alert>
-
-          <div className="space-y-2">
-            <Label htmlFor="cookie-input" className="text-sm font-medium">
-              Paste Cookies Here
+        <CollapsibleContent className="space-y-3 pt-2">
+          <div className="space-y-1">
+            <Label htmlFor="cookie-input" className="text-xs font-medium">
+              Cookies JSON or text
             </Label>
             <Textarea
               id="cookie-input"
-              data-testid="textarea-cookie-input"
-              placeholder={`JSON format:\n[{"name":"session_id","value":"abc123","domain":".example.com","path":"/"}]\n\nOr cookie format:\nsession_id=abc123; domain=.example.com; path=/`}
               value={cookieInput}
               onChange={(e) => setCookieInput(e.target.value)}
               disabled={disabled}
-              className="min-h-32 font-mono text-xs"
+              placeholder={`Paste cookies here in one of these formats:
+
+1) Chrome export JSON:
+[
+  {
+    "name": "loggedIn",
+    "value": "1",
+    "domain": ".linear.app",
+    "path": "/"
+  }
+]
+
+2) Text per line:
+loggedIn=1; domain=.linear.app; path=/`}
+              className="min-h-[120px] text-xs font-mono"
             />
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex items-center justify-between gap-3">
             <Button
               type="button"
-              onClick={handleParse}
-              disabled={!cookieInput.trim() || disabled}
               size="sm"
-              data-testid="button-parse-cookies"
-            >
-              Parse Cookies
-            </Button>
-            <Button
-              type="button"
-              onClick={handleClear}
-              disabled={!cookieInput && parsedCookies.length === 0}
               variant="outline"
-              size="sm"
-              data-testid="button-clear-cookies"
+              onClick={handleParse}
+              disabled={disabled || !cookieInput.trim()}
             >
-              Clear
+              Parse cookies
             </Button>
+
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Info className="h-3 w-3" />
+              <span>Only name, value, domain, and path are used</span>
+            </div>
           </div>
 
           {parseError && (
             <Alert variant="destructive">
               <XCircle className="h-4 w-4" />
-              <AlertDescription className="text-xs whitespace-pre-wrap">
+              <AlertDescription className="whitespace-pre-wrap text-xs">
                 {parseError}
               </AlertDescription>
             </Alert>
           )}
 
-          {parsedCookies.length > 0 && !parseError && (
+          {!parseError && parsedCookies.length > 0 && (
             <Alert>
               <CheckCircle2 className="h-4 w-4 text-green-600" />
               <AlertDescription className="text-xs">

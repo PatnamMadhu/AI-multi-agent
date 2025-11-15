@@ -1,34 +1,25 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { taskRequestSchema } from "@shared/schema";
+import type { TaskRequest } from "@shared/schema";
 import { WorkflowOrchestrator } from "./services/workflow";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
 
-  // POST /api/capture-workflow - Main endpoint to capture workflows
   app.post("/api/capture-workflow", async (req, res) => {
     try {
-      // Validate request body
-      const validationResult = taskRequestSchema.safeParse(req.body);
-      console.log("Validation result:", validationResult);
+      const body = req.body as TaskRequest | undefined;
 
-      if (!validationResult.success) {
+      if (!body || typeof body.question !== "string") {
         return res.status(400).json({
           error: "Invalid request",
-          details: validationResult.error.errors,
+          message: "Missing 'question' field",
         });
       }
 
-      const taskRequest = validationResult.data;
-
-      // Create workflow orchestrator
       const orchestrator = new WorkflowOrchestrator();
+      const result = await orchestrator.captureWorkflow(body);
 
-      // Execute workflow capture
-      const result = await orchestrator.captureWorkflow(taskRequest);
-
-      // Return result
       return res.json(result);
     } catch (error) {
       console.error("Error in /api/capture-workflow:", error);
@@ -39,8 +30,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // GET /api/health - Health check endpoint
-  app.get("/api/health", (req, res) => {
+  app.get("/api/health", (_req, res) => {
     res.json({
       status: "ok",
       timestamp: new Date().toISOString(),
