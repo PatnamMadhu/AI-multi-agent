@@ -27,11 +27,16 @@ AUTH MODE: already-logged-in
     if (credentials && (credentials.username || credentials.password)) {
       authInstructions = `
 AUTH MODE: need-sign-in (credentials will be auto-filled)
-- Explicitly document the sign-in flow with actual form interaction
-- Generate "type" steps for email/username field and password field
-- The system will automatically fill these fields with the provided credentials during execution
-- Use generic selectors and descriptions (e.g., "input[type='email']", "input[type='password']")
-- Wait for login to complete (check for dashboard, profile, or redirect)
+- CRITICAL: You MUST generate actual form interaction steps to perform the login
+- Required login steps in order:
+  1. Navigate to the login page URL
+  2. Wait for login form to load (wait for email/username input)
+  3. Type into email/username field (action: "type", selector: "input[type='email']" or similar)
+  4. Type into password field (action: "type", selector: "input[type='password']")
+  5. Click the submit/login button (action: "click")
+  6. Wait for login to complete (check for dashboard, profile, or redirect)
+- The system will automatically replace the typed values with real credentials during execution
+- Use generic CSS selectors like: "input[type='email']", "input[name='email']", "input[type='password']", "button[type='submit']"
 - After successful login, continue with the main task.`;
     } else {
       authInstructions = `
@@ -45,11 +50,17 @@ AUTH MODE: need-sign-in
     if (credentials && (credentials.username || credentials.password || credentials.displayName)) {
       authInstructions = `
 AUTH MODE: need-sign-up (credentials will be auto-filled)
-- Explicitly document the registration/sign-up flow with actual form interaction
-- Generate "type" steps for name/display name field, email field, and password field
-- The system will automatically fill these fields with the provided credentials during execution
-- Use generic selectors and descriptions (e.g., "input[name='name']", "input[type='email']", "input[type='password']")
-- Wait for registration to complete (email confirmation, redirect, etc.)
+- CRITICAL: You MUST generate actual form interaction steps to perform the registration
+- Required registration steps in order:
+  1. Navigate to the signup/register page URL
+  2. Wait for registration form to load
+  3. Type into name/display name field if present (action: "type", selector: "input[name='name']" or similar)
+  4. Type into email field (action: "type", selector: "input[type='email']")
+  5. Type into password field (action: "type", selector: "input[type='password']")
+  6. Click the submit/register button (action: "click")
+  7. Wait for registration to complete (email confirmation, redirect, etc.)
+- The system will automatically replace the typed values with real credentials during execution
+- Use generic CSS selectors like: "input[name='name']", "input[type='email']", "input[type='password']", "button[type='submit']"
 - After successful registration, continue with the main task.`;
     } else {
       authInstructions = `
@@ -128,7 +139,7 @@ CONDITIONALS:
   - Use "cases": [{ "matchValue": "...", "steps": [...] }]
   - Optional "defaultBranch" for unmatched values.
 
-Example conditional for auth check (generic):
+Example conditional for auth check with login (when credentials provided):
 
 {
   "stepNumber": 1,
@@ -154,16 +165,48 @@ Example conditional for auth check (generic):
       {
         "stepNumber": 1.2,
         "action": "navigate",
-        "description": "Go to login page",
+        "description": "Navigate to login page",
         "selector": "",
         "value": "https://example.com/login",
         "waitFor": "domcontentloaded"
       },
       {
         "stepNumber": 1.3,
-        "action": "screenshot",
-        "description": "Show login form where user will enter credentials",
-        "selector": "",
+        "action": "wait",
+        "description": "Wait for login form to load",
+        "selector": "input[type='email'], input[name='email']",
+        "value": "",
+        "waitFor": ""
+      },
+      {
+        "stepNumber": 1.4,
+        "action": "type",
+        "description": "Type email address into email field",
+        "selector": "input[type='email'], input[name='email']",
+        "value": "user@example.com",
+        "waitFor": ""
+      },
+      {
+        "stepNumber": 1.5,
+        "action": "type",
+        "description": "Type password into password field",
+        "selector": "input[type='password']",
+        "value": "placeholder-password",
+        "waitFor": ""
+      },
+      {
+        "stepNumber": 1.6,
+        "action": "click",
+        "description": "Click login button to submit credentials",
+        "selector": "button[type='submit'], button[aria-label*='Sign in']",
+        "value": "",
+        "waitFor": ""
+      },
+      {
+        "stepNumber": 1.7,
+        "action": "wait",
+        "description": "Wait for login to complete and dashboard to load",
+        "selector": "header [aria-label*='Profile'], main[role='main']",
         "value": "",
         "waitFor": ""
       }
