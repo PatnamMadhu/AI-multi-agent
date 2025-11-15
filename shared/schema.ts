@@ -158,12 +158,19 @@ export interface VisualDiffConfig {
   disabled?: boolean;
 }
 
+export interface Credentials {
+  username?: string; // Email or username
+  password?: string;
+  displayName?: string; // For signup flows
+}
+
 export interface TaskRequest {
   question: string;
   targetUrl?: string;
   cookies?: CookieData[]; // App cookies + OAuth provider cookies
   visualDiff?: VisualDiffConfig;
   authPreference?: AuthPreference;
+  credentials?: Credentials; // Login/signup credentials
 }
 
 // OAuth configuration for known providers
