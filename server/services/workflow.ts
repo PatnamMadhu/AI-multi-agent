@@ -10,6 +10,9 @@ import { VisualDiffDetector } from "./visualDiff";
 import { analyzeTask } from "./openai";
 import Cache from "./cache";
 
+import fs from "fs-extra";
+import path from "path";
+
 export class WorkflowOrchestrator {
   private visualDiff: VisualDiffDetector;
 
@@ -22,27 +25,37 @@ export class WorkflowOrchestrator {
   }
 
   async captureWorkflow(request: TaskRequest): Promise<WorkflowResponse> {
-    // Log question but NEVER log credentials or verification codes for security
     console.log("[Orchestrator] Incoming request:", {
       question: request.question,
       authPreference: request.authPreference,
       targetUrl: request.targetUrl,
       hasCookies: !!request.cookies?.length,
       hasCredentials: !!request.credentials,
-      hasVerificationCode: "verificationCode" in request && request.verificationCode !== undefined,
+      hasVerificationCode:
+        "verificationCode" in request && request.verificationCode !== undefined,
     });
 
-    // SECURITY: Skip cache entirely if credentials or verification code exists
-    // This ensures sensitive data is never processed, hashed, cached, or logged
-    // We check for presence of properties regardless of values (even empty strings)
-    // to prevent any bypass attacks
     const hasCredentials = !!request.credentials;
-    const hasVerificationCode = "verificationCode" in request && request.verificationCode !== undefined;
+    const hasVerificationCode =
+      "verificationCode" in request && request.verificationCode !== undefined;
     const hasSensitiveData = hasCredentials || hasVerificationCode;
+
+    // ------------------------------
+    // Create screenshot folder (NEW)
+    // ------------------------------
+    const screenshotFolder = path.join(
+      process.cwd(),
+      "screenshots",
+      Date.now().toString(),
+    );
+
+    await fs.ensureDir(screenshotFolder);
 
     if (hasSensitiveData) {
       const reason = hasCredentials ? "credentials" : "verification code";
-      console.log(`[Orchestrator] Skipping cache for request with ${reason} (security)`);
+      console.log(
+        `[Orchestrator] Skipping cache for request with ${reason} (security)`,
+      );
     } else {
       const cacheKey = Cache.generateCacheKey(request);
       const cached = Cache.workflowCache.get(cacheKey);
@@ -58,7 +71,8 @@ export class WorkflowOrchestrator {
       console.log(`[Orchestrator] Cache MISS for: "${request.question}"`);
     }
 
-    const automation = new BrowserAutomation(this.visualDiff);
+    // Pass screenshot folder into browser automation
+    const automation = new BrowserAutomation(this.visualDiff, screenshotFolder);
     await automation.initialize();
 
     if (request.cookies?.length) {
@@ -78,15 +92,19 @@ export class WorkflowOrchestrator {
     let errorMessage: string | undefined;
 
     try {
-      analysis = await analyzeTask(request.question, request.authPreference, request.credentials);
+      analysis = await analyzeTask(
+        request.question,
+        request.authPreference,
+        request.credentials,
+      );
 
       screenshots = await automation.executeNavigationPlan(
         analysis,
         (step, message) => {
           console.log(`[Progress] Step ${step}: ${message}`);
         },
-        request.credentials, // Pass credentials to browser automation for auto-fill
-        request.verificationCode, // Pass verification code for 2FA/MFA auto-fill
+        request.credentials,
+        request.verificationCode,
       );
     } catch (err) {
       status = "partial";
@@ -103,11 +121,11 @@ export class WorkflowOrchestrator {
       analysis,
       status,
       timestamp: new Date().toISOString(),
+      screenshotFolder, // <-- NEW
       cacheHit: false,
       errorMessage,
     };
 
-    // Cache the response only if no sensitive data was provided
     if (!hasSensitiveData) {
       const cacheKey = Cache.generateCacheKey(request);
       Cache.workflowCache.set(cacheKey, response);

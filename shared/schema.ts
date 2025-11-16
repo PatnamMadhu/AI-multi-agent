@@ -34,7 +34,7 @@ export const workflowScreenshots = pgTable("workflow_screenshots", {
   description: text("description").notNull(),
   url: text("url"),
   imageBase64: text("image_base64").notNull(),
-  annotations: jsonb("annotations"), // bounding boxes
+  annotations: jsonb("annotations"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -44,7 +44,7 @@ export const workflowScreenshots = pgTable("workflow_screenshots", {
 export const workflowCacheTable = pgTable("workflow_cache", {
   cacheKey: varchar("cache_key", { length: 255 }).primaryKey(),
   question: text("question").notNull(),
-  response: jsonb("response").notNull(), // full WorkflowResponse JSON
+  response: jsonb("response").notNull(),
   expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -56,7 +56,7 @@ export const openaiAnalysisLog = pgTable("openai_analysis_log", {
   id: uuid("id").primaryKey().defaultRandom(),
   question: text("question").notNull(),
   model: varchar("model", { length: 100 }),
-  analysis: jsonb("analysis").notNull(), // {startingUrl, plan, steps}
+  analysis: jsonb("analysis").notNull(),
   tokensUsed: integer("tokens_used"),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -64,7 +64,6 @@ export const openaiAnalysisLog = pgTable("openai_analysis_log", {
 /* -------------------------------------------------------
    Drizzle row types
 ------------------------------------------------------- */
-
 export type WorkflowSession = typeof workflowSessions.$inferSelect;
 export type WorkflowScreenshot = typeof workflowScreenshots.$inferSelect;
 export type WorkflowCacheRow = typeof workflowCacheTable.$inferSelect;
@@ -89,6 +88,9 @@ export interface Screenshot {
   url?: string;
   annotations?: BoundingBox[];
   timestamp: string;
+
+  // ⭐ NEW — path to saved screenshot on the server
+  filePath?: string;
 }
 
 export type ActionType =
@@ -122,7 +124,7 @@ export interface ConditionalBranch {
     | "if-else"
     | "switch-case";
   selector?: string;
-  expectedValue?: string; // For text / url checks
+  expectedValue?: string;
   ifBranch: NavigationStep[];
   elseBranch?: NavigationStep[];
   cases?: ConditionalCase[];
@@ -150,7 +152,7 @@ export interface CookieData {
   secure?: boolean;
   httpOnly?: boolean;
   sameSite?: "Lax" | "Strict" | "None" | "lax" | "strict" | "none";
-  provider?: string; // OAuth provider domain (e.g., "google.com", "github.com")
+  provider?: string;
 }
 
 export interface VisualDiffConfig {
@@ -159,26 +161,28 @@ export interface VisualDiffConfig {
 }
 
 export interface Credentials {
-  username?: string; // Email or username
+  username?: string;
   password?: string;
-  displayName?: string; // For signup flows
+  displayName?: string;
 }
 
 export interface TaskRequest {
   question: string;
   targetUrl?: string;
-  cookies?: CookieData[]; // App cookies + OAuth provider cookies
+  cookies?: CookieData[];
   visualDiff?: VisualDiffConfig;
   authPreference?: AuthPreference;
-  credentials?: Credentials; // Login/signup credentials
-  verificationCode?: string; // 2FA/MFA verification code (for already-logged-in mode)
+  credentials?: Credentials;
+  verificationCode?: string;
 }
 
-// OAuth configuration for known providers
+/* -------------------------------------------------------
+   OAuth providers
+------------------------------------------------------- */
 export interface OAuthProviderConfig {
-  name: string; // "Google", "GitHub", "Microsoft", etc.
-  domain: string; // "google.com", "github.com", etc.
-  buttonPatterns: string[]; // Text patterns to detect OAuth buttons
+  name: string;
+  domain: string;
+  buttonPatterns: string[];
 }
 
 export const KNOWN_OAUTH_PROVIDERS: OAuthProviderConfig[] = [
@@ -226,6 +230,9 @@ export const KNOWN_OAUTH_PROVIDERS: OAuthProviderConfig[] = [
 
 export type WorkflowStatus = "success" | "partial" | "failed";
 
+/* -------------------------------------------------------
+   Workflow Response (UPDATED)
+------------------------------------------------------- */
 export interface WorkflowResponse {
   taskId: string;
   question: string;
@@ -234,7 +241,9 @@ export interface WorkflowResponse {
   status: WorkflowStatus;
   timestamp: string;
   cacheHit?: boolean;
-  error?: string; // Alias for errorMessage
+
+  error?: string;
   errorMessage?: string;
-  processingDuration?: number; // Processing time in milliseconds
+  processingDuration?: number;
+  screenshotFolder?: string;
 }

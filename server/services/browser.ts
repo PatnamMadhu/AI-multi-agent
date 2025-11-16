@@ -17,6 +17,9 @@ import {
 import { VisualDiffDetector } from "./visualDiff";
 import { evaluateConditional } from "./conditionalEvaluator";
 
+import fs from "fs-extra";
+import path from "path";
+
 const validWaitUntilEvents = [
   "load",
   "domcontentloaded",
@@ -40,11 +43,17 @@ export class BrowserAutomation {
   private visualDiffDetector: VisualDiffDetector | null = null;
   private lastBoundingBox: BoundingBox | null = null;
   private baseUrl: string | null = null;
-  private credentials: Credentials | null = null; // Stored for auto-fill during execution
-  private verificationCode: string | null = null; // Stored for 2FA/MFA auto-fill
+  private credentials: Credentials | null = null;
+  private verificationCode: string | null = null;
 
-  constructor(visualDiffDetector?: VisualDiffDetector) {
+  private screenshotDir: string | null = null;  // NEW
+
+  constructor(
+    visualDiffDetector?: VisualDiffDetector,
+    screenshotDir?: string // NEW
+  ) {
     this.visualDiffDetector = visualDiffDetector || null;
+    this.screenshotDir = screenshotDir || null; // NEW
   }
 
   async initialize(): Promise<void> {
@@ -84,27 +93,19 @@ export class BrowserAutomation {
     await this.page.setCookie(...cookies);
   }
 
-  /**
-   * Detect if a selector might be an OAuth button
-   */
   private isOAuthButton(selector: string, description: string): boolean {
     const combined = `${selector} ${description}`.toLowerCase();
     return KNOWN_OAUTH_PROVIDERS.some((provider) =>
-      provider.buttonPatterns.some(
-        (pattern) => combined.includes(pattern.toLowerCase())
+      provider.buttonPatterns.some((pattern) =>
+        combined.includes(pattern.toLowerCase())
       )
     );
   }
 
   private resolveUrl(rawUrl: string): string {
     if (!rawUrl) return "";
+    if (/^https?:\/\//i.test(rawUrl)) return rawUrl;
 
-    // Absolute URL
-    if (/^https?:\/\//i.test(rawUrl)) {
-      return rawUrl;
-    }
-
-    // If it starts with "/" – resolve against baseUrl or current page
     if (rawUrl.startsWith("/")) {
       const base = this.baseUrl || (this.page ? this.page.url() : "");
       try {
@@ -115,19 +116,13 @@ export class BrowserAutomation {
           u.hash = "";
           return u.toString();
         }
-      } catch {
-        // fall through
-      }
+      } catch {}
     }
 
-    // Fallback: resolve relative to current page
     if (this.page) {
-      const current = this.page.url();
       try {
-        return new URL(rawUrl, current).toString();
-      } catch {
-        return rawUrl;
-      }
+        return new URL(rawUrl, this.page.url()).toString();
+      } catch {}
     }
 
     return rawUrl;
@@ -136,21 +131,20 @@ export class BrowserAutomation {
   async executeNavigationPlan(
     analysis: TaskAnalysis,
     progressCallback?: (step: number, message: string) => void,
-    credentials?: Credentials, // Credentials for auto-filling login/signup forms
-    verificationCode?: string, // 2FA/MFA verification code for auto-filling
+    credentials?: Credentials,
+    verificationCode?: string,
   ): Promise<Screenshot[]> {
     if (!this.page || !this.waitManager) {
       throw new Error("Browser not initialized");
     }
 
     this.baseUrl = analysis.startingUrl || null;
-    this.credentials = credentials || null; // Store for use during form filling
-    this.verificationCode = verificationCode || null; // Store for 2FA/MFA auto-filling
+    this.credentials = credentials || null;
+    this.verificationCode = verificationCode || null;
 
     const screenshots: Screenshot[] = [];
     const plan = analysis.navigationPlan || [];
 
-    // Starting URL navigation
     if (analysis.startingUrl && analysis.startingUrl !== "about:blank") {
       const url = this.resolveUrl(analysis.startingUrl);
       try {
@@ -183,7 +177,6 @@ export class BrowserAutomation {
           error,
         );
 
-        // Capture error screenshot for debugging
         try {
           const errorShot = await this.captureScreenshot({
             ...step,
@@ -192,11 +185,8 @@ export class BrowserAutomation {
             })`,
           });
           if (errorShot) screenshots.push(errorShot);
-        } catch (shotErr) {
-          console.error("Failed to capture error screenshot:", shotErr);
-        }
+        } catch {}
 
-        // For now, continue to next step even on error.
       }
     }
 
@@ -212,37 +202,17 @@ export class BrowserAutomation {
       throw new Error("Browser not initialized");
     }
 
-    if (!step.action) {
-      console.warn(`[Step ${step.stepNumber}] Missing action, skipping`);
-      return screenshots;
-    }
+    if (!step.action) return screenshots;
 
-    if (step.action.toLowerCase() === "conditional") {
-      if (!step.conditional) {
-        console.warn(
-          `[Step ${step.stepNumber}] Conditional step missing "conditional" field`,
-        );
-        return screenshots;
-      }
-
-      console.log(
-        `[Step ${step.stepNumber}] Evaluating conditional: ${step.description}`,
-      );
-
-      const branchSteps = await evaluateConditional(
-        step.conditional,
-        this.page,
-      );
-
+    if (step.action.toLowerCase() === "conditional" && step.conditional) {
+      const branchSteps = await evaluateConditional(step.conditional, this.page);
       for (const bStep of branchSteps) {
         const branchScreens = await this.executeStepWithScreenshots(bStep);
         screenshots.push(...branchScreens);
       }
-
       return screenshots;
     }
 
-    // Non-conditional step
     await this.executeStep(step);
 
     const shot = await this.captureScreenshot(step);
@@ -264,187 +234,56 @@ export class BrowserAutomation {
         break;
 
       case "click":
-        if (step.selector) {
-          await this.waitManager.waitForSelector(step.selector, {
-            timeout: 10000,
+        if (!step.selector) return;
+
+        await this.waitManager.waitForSelector(step.selector, { timeout: 10000 });
+        this.lastBoundingBox = await this.captureBoundingBox(step.selector, "click");
+
+        const isOAuth = this.isOAuthButton(step.selector, step.description || "");
+        let popupPromise: Promise<Page | null> | null = null;
+
+        if (isOAuth) {
+          popupPromise = new Promise<Page | null>((resolve) => {
+            const timeout = setTimeout(() => resolve(null), 5000);
+            this.page!.once("popup", async (popup) => {
+              clearTimeout(timeout);
+              resolve(popup || null);
+            });
           });
-
-          this.lastBoundingBox = await this.captureBoundingBox(
-            step.selector,
-            "click",
-          );
-
-          // Check if this is an OAuth button - set up popup listener BEFORE clicking
-          const isOAuth = this.isOAuthButton(
-            step.selector,
-            step.description || ""
-          );
-
-          let popupPromise: Promise<Page | null> | null = null;
-
-          if (isOAuth) {
-            console.log(`[OAuth] Detected OAuth button: ${step.description}`);
-            console.log(`[OAuth] Setting up popup listener before click...`);
-
-            // Set up popup listener BEFORE clicking
-            popupPromise = new Promise<Page | null>((resolve) => {
-              const timeout = setTimeout(() => {
-                console.log("[OAuth] No popup detected within 5 seconds");
-                resolve(null);
-              }, 5000);
-
-              this.page!.once("popup", async (popup) => {
-                clearTimeout(timeout);
-                if (popup) {
-                  console.log(`[OAuth] Popup detected: ${popup.url()}`);
-                  resolve(popup);
-                } else {
-                  console.log("[OAuth] Popup event fired but popup is null");
-                  resolve(null);
-                }
-              });
-            });
-          }
-
-          // Click the element (potentially triggering OAuth popup)
-          await this.waitManager.withRetry(
-            async () => {
-              try {
-                await this.page!.click(step.selector!);
-              } catch {
-                throw new ElementNotFoundError(step.selector!, step.stepNumber);
-              }
-            },
-            { maxRetries: 2, baseDelay: 500 },
-          );
-
-          // If OAuth button, wait for popup to complete
-          if (isOAuth && popupPromise) {
-            const popup = await popupPromise;
-
-            if (popup) {
-              // Detect which OAuth provider
-              const popupUrl = popup.url();
-              const provider = KNOWN_OAUTH_PROVIDERS.find((p) =>
-                popupUrl.includes(p.domain)
-              );
-
-              if (provider) {
-                console.log(`[OAuth] Detected ${provider.name} OAuth flow at ${popupUrl}`);
-              }
-
-              // Wait for popup to close
-              console.log("[OAuth] Waiting for OAuth popup to close...");
-              try {
-                await new Promise<void>((resolve) => {
-                  const timeout = setTimeout(() => {
-                    console.log("[OAuth] Popup timeout - continuing anyway");
-                    resolve();
-                  }, 60000);
-
-                  const checkClosed = setInterval(() => {
-                    if (popup.isClosed()) {
-                      clearTimeout(timeout);
-                      clearInterval(checkClosed);
-                      console.log("[OAuth] OAuth popup closed successfully");
-                      resolve();
-                    }
-                  }, 500);
-                });
-              } catch (err) {
-                console.log("[OAuth] Error waiting for popup:", err);
-              }
-
-              // Wait for main page to stabilize after OAuth
-              await this.waitManager.waitForStability({
-                timeout: 3000,
-                stabilityDelay: 500,
-              });
-            } else {
-              console.log("[OAuth] No popup appeared - treating as regular click");
-              await this.waitManager.waitForStability({
-                timeout: 2000,
-                stabilityDelay: 300,
-              });
-            }
-          } else {
-            // Regular click - normal stability wait
-            await this.waitManager.waitForStability({
-              timeout: 2000,
-              stabilityDelay: 300,
-            });
-          }
         }
-        break;
 
-      case "type":
-        if (step.selector && step.value) {
-          await this.waitManager.waitForSelector(step.selector, {
-            timeout: 10000,
+        await this.waitManager.withRetry(
+          async () => {
+            try {
+              await this.page!.click(step.selector!);
+            } catch {
+              throw new ElementNotFoundError(step.selector!, step.stepNumber);
+            }
+          },
+          { maxRetries: 2, baseDelay: 500 },
+        );
+
+        if (isOAuth && popupPromise) {
+          const popup = await popupPromise;
+
+          if (popup) {
+            await new Promise<void>((resolve) => {
+              const timeout = setTimeout(resolve, 60000);
+              const interval = setInterval(() => {
+                if (popup.isClosed()) {
+                  clearTimeout(timeout);
+                  clearInterval(interval);
+                  resolve();
+                }
+              }, 300);
+            });
+          }
+
+          await this.waitManager.waitForStability({
+            timeout: 3000,
+            stabilityDelay: 500,
           });
-
-          this.lastBoundingBox = await this.captureBoundingBox(
-            step.selector,
-            "type",
-          );
-
-          // Auto-fill credentials and verification codes if available
-          let valueToType = step.value;
-          const selectorLower = step.selector.toLowerCase();
-          const descriptionLower = (step.description || "").toLowerCase();
-          
-          if (this.credentials) {
-            // Check if this is an email/username field
-            if ((selectorLower.includes('email') || selectorLower.includes('username') || selectorLower.includes("type='email'") ||
-                 descriptionLower.includes('email') || descriptionLower.includes('username')) &&
-                this.credentials.username) {
-              valueToType = this.credentials.username;
-              console.log(`[BrowserAutomation] Auto-filling email/username field`);
-            }
-            // Check if this is a password field
-            else if ((selectorLower.includes('password') || selectorLower.includes("type='password'") ||
-                      descriptionLower.includes('password')) &&
-                     this.credentials.password) {
-              valueToType = this.credentials.password;
-              console.log(`[BrowserAutomation] Auto-filling password field`);
-            }
-            // Check if this is a name/display name field
-            else if ((selectorLower.includes('name') || selectorLower.includes('display') ||
-                      descriptionLower.includes('name') || descriptionLower.includes('display')) &&
-                     this.credentials.displayName) {
-              valueToType = this.credentials.displayName;
-              console.log(`[BrowserAutomation] Auto-filling name field`);
-            }
-          }
-          
-          // Check if this is a verification code field (2FA/MFA)
-          if (this.verificationCode && 
-              (selectorLower.includes('code') || selectorLower.includes('verification') || 
-               selectorLower.includes('2fa') || selectorLower.includes('mfa') || 
-               selectorLower.includes('otp') || selectorLower.includes('token') ||
-               descriptionLower.includes('code') || descriptionLower.includes('verification') ||
-               descriptionLower.includes('2fa') || descriptionLower.includes('mfa') ||
-               descriptionLower.includes('otp') || descriptionLower.includes('token'))) {
-            valueToType = this.verificationCode;
-            console.log(`[BrowserAutomation] Auto-filling verification code field`);
-          }
-
-          await this.waitManager.withRetry(
-            async () => {
-              try {
-                await this.page!.click(step.selector!, {
-                  clickCount: 3,
-                });
-                await this.page!.type(step.selector!, valueToType, {
-                  delay: 50,
-                });
-              } catch {
-                throw new ElementNotFoundError(step.selector!, step.stepNumber);
-              }
-            },
-            { maxRetries: 2, baseDelay: 500 },
-          );
-
+        } else {
           await this.waitManager.waitForStability({
             timeout: 2000,
             stabilityDelay: 300,
@@ -452,14 +291,63 @@ export class BrowserAutomation {
         }
         break;
 
+      case "type":
+        if (!step.selector || !step.value) return;
+
+        await this.waitManager.waitForSelector(step.selector, { timeout: 10000 });
+        this.lastBoundingBox = await this.captureBoundingBox(step.selector, "type");
+
+        let valueToType = step.value;
+        const sel = step.selector.toLowerCase();
+        const desc = (step.description || "").toLowerCase();
+
+        if (this.credentials) {
+          if (
+            (sel.includes("email") || sel.includes("username") || desc.includes("email")) &&
+            this.credentials.username
+          ) {
+            valueToType = this.credentials.username;
+          } else if (
+            (sel.includes("password") || desc.includes("password")) &&
+            this.credentials.password
+          ) {
+            valueToType = this.credentials.password;
+          } else if (
+            (sel.includes("name") || desc.includes("name")) &&
+            this.credentials.displayName
+          ) {
+            valueToType = this.credentials.displayName;
+          }
+        }
+
+        if (this.verificationCode) {
+          if (
+            sel.includes("code") ||
+            sel.includes("otp") ||
+            sel.includes("mfa") ||
+            sel.includes("verification") ||
+            desc.includes("code")
+          ) {
+            valueToType = this.verificationCode;
+          }
+        }
+
+        await this.waitManager.withRetry(
+          async () => {
+            await this.page!.click(step.selector!, { clickCount: 3 });
+            await this.page!.type(step.selector!, valueToType, { delay: 50 });
+          },
+          { maxRetries: 2, baseDelay: 500 },
+        );
+
+        await this.waitManager.waitForStability({ timeout: 2000 });
+        break;
+
       case "wait":
         if (step.selector) {
-          await this.waitManager.waitForSelector(step.selector, {
-            timeout: 15000,
-          });
+          await this.waitManager.waitForSelector(step.selector, { timeout: 15000 });
         } else {
-          const waitTime = parseInt(step.value || "2000", 10);
-          await new Promise((resolve) => setTimeout(resolve, waitTime));
+          await new Promise((res) => setTimeout(res, parseInt(step.value || "2000", 10)));
         }
         break;
 
@@ -473,43 +361,27 @@ export class BrowserAutomation {
   }
 
   private async handleNavigate(step: NavigationStep): Promise<void> {
-    if (!this.page || !this.waitManager) {
-      throw new Error("Browser or WaitManager not initialized");
-    }
+    if (!this.page || !this.waitManager) throw new Error("Browser not initialized");
 
     const rawUrl = step.value || step.selector || "";
     const url = this.resolveUrl(rawUrl);
 
-    if (!url || url === "about:blank") {
-      console.warn(
-        `Navigation step ${step.stepNumber} missing or invalid URL: "${rawUrl}"`,
-      );
-      return;
-    }
+    if (!url) return;
 
     const waitFor = step.waitFor;
-    const isLifecycleEvent = isWaitUntilEvent(waitFor);
+    const isLifecycle = isWaitUntilEvent(waitFor);
 
     try {
       this.waitManager.onNavigationStart();
 
-      const response = await this.page.goto(url, {
-        waitUntil: isLifecycleEvent ? waitFor : "networkidle2",
+      const resp = await this.page.goto(url, {
+        waitUntil: isLifecycle ? waitFor : "networkidle2",
         timeout: 30000,
       });
 
       this.waitManager.onNavigationEnd();
 
-      if (!response || !response.ok()) {
-        console.warn(
-          `[BrowserAutomation] Navigation to ${url} returned status: ${
-            response ? response.status() : "no response"
-          }`,
-        );
-      }
-
-      if (waitFor && !isLifecycleEvent) {
-        console.log(`[BrowserAutomation] Waiting for selector: ${waitFor}`);
+      if (waitFor && !isLifecycle) {
         await this.page.waitForSelector(waitFor, { timeout: 10000 });
       }
 
@@ -543,15 +415,12 @@ export class BrowserAutomation {
       }, selector);
 
       return box ? { ...box, label } : null;
-    } catch (error) {
-      console.warn(`Failed to capture bounding box for ${selector}:`, error);
+    } catch {
       return null;
     }
   }
 
-  private async captureScreenshot(
-    step: NavigationStep,
-  ): Promise<Screenshot | null> {
+  private async captureScreenshot(step: NavigationStep): Promise<Screenshot | null> {
     if (!this.page) throw new Error("Page not initialized");
 
     let buffer: Buffer;
@@ -560,40 +429,40 @@ export class BrowserAutomation {
         type: "png",
         fullPage: false,
       })) as Buffer;
-    } catch (err) {
-      console.error("Failed to capture screenshot:", err);
+    } catch {
       return null;
     }
 
     if (this.visualDiffDetector) {
-      const duplicateOf = await this.visualDiffDetector.isDuplicate(
-        step.stepNumber,
-        buffer,
-      );
-      if (duplicateOf !== null) {
-        console.log(
-          `Skipping screenshot ${step.stepNumber} - duplicate of ${duplicateOf}`,
-        );
-        this.lastBoundingBox = null;
-        return null;
-      }
+      const dup = await this.visualDiffDetector.isDuplicate(step.stepNumber, buffer);
+      if (dup !== null) return null;
     }
 
-    const base64Image = buffer.toString("base64");
-    const url = this.page.url();
+    const base64 = buffer.toString("base64");
 
-    const annotations = this.lastBoundingBox
-      ? [this.lastBoundingBox]
-      : undefined;
+    let filePath: string | undefined = undefined;
+
+    // ---------------------------------
+    // 🚀 SAVE SCREENSHOT TO DISK (NEW)
+    // ---------------------------------
+    if (this.screenshotDir) {
+      const filename = `step-${step.stepNumber}.png`;
+      filePath = path.join(this.screenshotDir, filename);
+      await fs.writeFile(filePath, buffer);
+    }
+
+    const url = this.page.url();
+    const annotations = this.lastBoundingBox ? [this.lastBoundingBox] : undefined;
     this.lastBoundingBox = null;
 
     return {
       stepNumber: step.stepNumber,
       description: step.description,
-      imageBase64: base64Image,
+      imageBase64: base64,
       timestamp: new Date().toISOString(),
       url,
       annotations,
+      filePath, // NEW
     };
   }
 
