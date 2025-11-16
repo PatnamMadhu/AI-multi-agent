@@ -83,14 +83,68 @@ export class BrowserAutomation {
     );
   }
 
-  async setCookies(cookies: any[]): Promise<void> {
+  async setCookies(cookies: any[], firstNavigationUrl?: string): Promise<void> {
     if (!this.page) throw new Error("Page not initialized");
     if (!cookies || cookies.length === 0) return;
 
     console.log(
-      `[BrowserAutomation] Applying ${cookies.length} session cookies before navigation`,
+      `[BrowserAutomation] Applying ${cookies.length} session cookies with domain-aware bootstrap`,
     );
-    await this.page.setCookie(...cookies);
+
+    // Group cookies by domain
+    const cookiesByDomain = new Map<string, any[]>();
+    
+    for (const cookie of cookies) {
+      let domain = cookie.domain;
+      
+      // If no domain specified, try to infer from firstNavigationUrl
+      if (!domain && firstNavigationUrl) {
+        try {
+          const url = new URL(firstNavigationUrl);
+          domain = url.hostname;
+        } catch (err) {
+          console.warn(`[BrowserAutomation] Could not parse URL for cookie domain inference: ${firstNavigationUrl}`);
+        }
+      }
+      
+      // Skip cookies without valid domain
+      if (!domain) {
+        console.warn(`[BrowserAutomation] Skipping cookie without domain: ${cookie.name}`);
+        continue;
+      }
+      
+      // Normalize domain (remove leading dot if present for grouping)
+      const normalizedDomain = domain.startsWith('.') ? domain.substring(1) : domain;
+      
+      if (!cookiesByDomain.has(normalizedDomain)) {
+        cookiesByDomain.set(normalizedDomain, []);
+      }
+      cookiesByDomain.get(normalizedDomain)!.push(cookie);
+    }
+
+    // For each domain, navigate to it and set cookies
+    for (const [domain, domainCookies] of Array.from(cookiesByDomain.entries())) {
+      try {
+        // Navigate to the domain to establish context
+        const bootstrapUrl = `https://${domain}`;
+        console.log(`[BrowserAutomation] Bootstrapping domain: ${bootstrapUrl} (${domainCookies.length} cookies)`);
+        
+        await this.page.goto(bootstrapUrl, {
+          waitUntil: 'domcontentloaded',
+          timeout: 10000,
+        });
+
+        // Set cookies for this domain
+        await this.page.setCookie(...domainCookies);
+        console.log(`[BrowserAutomation] Successfully applied ${domainCookies.length} cookies for domain: ${domain}`);
+        
+      } catch (err) {
+        console.error(`[BrowserAutomation] Failed to apply cookies for domain ${domain}:`, err);
+        // Continue with other domains even if one fails
+      }
+    }
+
+    console.log(`[BrowserAutomation] Cookie bootstrap complete for ${cookiesByDomain.size} domain(s)`);
   }
 
   private isOAuthButton(selector: string, description: string): boolean {

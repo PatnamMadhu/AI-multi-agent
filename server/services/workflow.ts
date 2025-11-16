@@ -4,6 +4,7 @@ import type {
   WorkflowResponse,
   Screenshot,
   TaskAnalysis,
+  NavigationStep,
 } from "@shared/schema";
 import { BrowserAutomation } from "./browser";
 import { VisualDiffDetector } from "./visualDiff";
@@ -75,29 +76,51 @@ export class WorkflowOrchestrator {
     const automation = new BrowserAutomation(this.visualDiff, screenshotFolder);
     await automation.initialize();
 
-    if (request.cookies?.length) {
-      try {
-        console.log(
-          `[Orchestrator] Applying ${request.cookies.length} cookies…`,
-        );
-        await automation.setCookies(request.cookies);
-      } catch (err) {
-        console.error("[Orchestrator] Failed to apply cookies:", err);
-      }
-    }
-
     let analysis: TaskAnalysis | undefined;
-    let screenshots: Screenshot[] = [];
-    let status: WorkflowResponse["status"] = "success";
-    let errorMessage: string | undefined;
-
+    
+    // Get analysis first to extract first navigation URL for cookie domain inference
     try {
       analysis = await analyzeTask(
         request.question,
         request.authPreference,
         request.credentials,
       );
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.error("[Orchestrator] Error during task analysis:", err);
+      await automation.close();
+      return {
+        taskId: crypto.randomUUID(),
+        question: request.question,
+        status: "partial",
+        error: `Failed to analyze task: ${errorMessage}`,
+        analysis: undefined,
+        screenshots: [],
+        timestamp: new Date().toISOString(),
+        cacheHit: false,
+      };
+    }
 
+    // Apply cookies with domain-aware bootstrap if provided
+    if (request.cookies?.length) {
+      try {
+        console.log(
+          `[Orchestrator] Applying ${request.cookies.length} cookies…`,
+        );
+        
+        // Extract first navigation URL from analysis for domain inference
+        const firstNavigationUrl = analysis.navigationPlan.find((s: NavigationStep) => s.action === 'navigate')?.value;
+        
+        await automation.setCookies(request.cookies, firstNavigationUrl);
+      } catch (err) {
+        console.error("[Orchestrator] Failed to apply cookies:", err);
+      }
+    }
+    let screenshots: Screenshot[] = [];
+    let status: WorkflowResponse["status"] = "success";
+    let errorMessage: string | undefined;
+
+    try {
       screenshots = await automation.executeNavigationPlan(
         analysis,
         (step, message) => {
