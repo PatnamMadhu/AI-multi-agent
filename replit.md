@@ -83,6 +83,13 @@ The system provides flexible authentication handling with manual user control:
   - Cookies are only transmitted to backend when in "already-logged-in" mode
   - Supports OAuth provider cookies (Google, GitHub, etc.) for session reuse across apps
   - **Error Handling**: Validation error clears automatically when cookies are imported or auth mode is changed
+  - **Domain-Aware Cookie Bootstrap** (Nov 2025): Robust cookie application mechanism
+    - Groups cookies by domain and navigates to each domain before setting cookies
+    - Reloads page after cookie application to ensure session activation
+    - Supports multi-domain cookie sets (e.g., main domain + CDN domain)
+    - Infers domain from first navigation URL if cookie lacks explicit domain
+    - Graceful error handling - continues processing even if some domains fail
+    - Comprehensive logging of bootstrap operations for debugging
   - **2FA/MFA Verification Code Support** (Nov 2025): Optional verification code input for handling 2FA/MFA prompts
     - Input field appears below cookie import section
     - Accepts verification codes up to 10 characters
