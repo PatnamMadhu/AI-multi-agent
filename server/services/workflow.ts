@@ -86,30 +86,31 @@ export class WorkflowOrchestrator {
         request.credentials,
       );
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
+      const errorMsg = err instanceof Error ? err.message : String(err);
       console.error("[Orchestrator] Error during task analysis:", err);
       await automation.close();
       return {
         taskId: crypto.randomUUID(),
         question: request.question,
         status: "partial",
-        error: `Failed to analyze task: ${errorMessage}`,
+        errorMessage: `Failed to analyze task: ${errorMsg}`,
         analysis: undefined,
         screenshots: [],
         timestamp: new Date().toISOString(),
+        screenshotFolder,
         cacheHit: false,
       };
     }
 
     // Apply cookies with domain-aware bootstrap if provided
-    if (request.cookies?.length) {
+    if (request.cookies?.length && analysis) {
       try {
         console.log(
           `[Orchestrator] Applying ${request.cookies.length} cookies…`,
         );
         
-        // Extract first navigation URL from analysis for domain inference
-        const firstNavigationUrl = analysis.navigationPlan.find((s: NavigationStep) => s.action === 'navigate')?.value;
+        // Extract first navigation URL from analysis for domain inference (null-safe)
+        const firstNavigationUrl = analysis.navigationPlan?.find((s: NavigationStep) => s.action === 'navigate')?.value;
         
         await automation.setCookies(request.cookies, firstNavigationUrl);
       } catch (err) {

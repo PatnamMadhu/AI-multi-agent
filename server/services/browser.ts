@@ -138,6 +138,16 @@ export class BrowserAutomation {
         await this.page.setCookie(...domainCookies);
         console.log(`[BrowserAutomation] Successfully applied ${domainCookies.length} cookies for domain: ${domain}`);
         
+        // Reload the page to ensure cookies are recognized by the application
+        // This is especially important for auth flows that rely on session cookies
+        try {
+          await this.page.reload({ waitUntil: 'domcontentloaded', timeout: 10000 });
+          console.log(`[BrowserAutomation] Reloaded page to activate cookies for domain: ${domain}`);
+        } catch (reloadErr) {
+          console.warn(`[BrowserAutomation] Failed to reload after setting cookies for ${domain}, continuing anyway:`, reloadErr);
+          // Continue - cookies are still set, reload is just an optimization
+        }
+        
       } catch (err) {
         console.error(`[BrowserAutomation] Failed to apply cookies for domain ${domain}:`, err);
         // Continue with other domains even if one fails
