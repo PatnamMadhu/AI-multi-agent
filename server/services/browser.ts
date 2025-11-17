@@ -57,10 +57,18 @@ export class BrowserAutomation {
   }
 
   async initialize(): Promise<void> {
+    const execPath = process.env.BROWSER_EXECUTABLE_PATH || undefined;
+    if (execPath) {
+      console.log(`[BrowserAutomation] Using browser executable path: ${execPath}`);
+    } else {
+      console.log(
+        `[BrowserAutomation] No BROWSER_EXECUTABLE_PATH set; using Puppeteer default executable (bundled or system).`,
+      );
+    }
+
     this.browser = await puppeteer.launch({
       headless: true,
-      executablePath:
-        "/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.0.6422.141/bin/chromium",
+      ...(execPath ? { executablePath: execPath } : {}),
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",

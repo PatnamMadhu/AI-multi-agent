@@ -193,10 +193,6 @@ export default function Home() {
                 </p>
               </div>
             </div>
-            <Badge variant="secondary" className="gap-2">
-              <Zap className="h-3 w-3" />
-              <span className="text-xs font-medium">Powered by AI</span>
-            </Badge>
           </div>
         </div>
       </header>

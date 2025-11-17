@@ -1,3 +1,4 @@
+import "dotenv/config";
 import OpenAI from "openai";
 import type {
   TaskAnalysis,
@@ -6,7 +7,10 @@ import type {
   Credentials,
 } from "@shared/schema";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY!,
+});
+
 
 export async function analyzeTask(
   question: string,

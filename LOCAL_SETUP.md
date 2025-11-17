@@ -36,6 +36,14 @@ SESSION_SECRET=your_random_session_secret_here
 
 # Node Environment
 NODE_ENV=development
+
+# Optional: Custom browser executable path
+```
+# If you have a system-installed Chrome/Chromium or want to point to a custom
+# browser binary, set this environment variable. On Windows, this can point to
+# the installed Chrome path (e.g., `C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe`).
+BROWSER_EXECUTABLE_PATH=C:\\path\\to\\chrome_or_chromium
+```
 ```
 
 **To generate a session secret:**
