@@ -6,3 +6,6 @@ vite.config.ts.*
 *.tar.gz
 .env
 screenshots
+.replit
+replit.md
+local_setup.md

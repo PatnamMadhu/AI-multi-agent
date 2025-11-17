@@ -202,14 +202,6 @@ export default function Home() {
         {/* Input Section */}
         {!workflow && !captureWorkflowMutation.isError && (
           <div className="space-y-6">
-            <div className="space-y-2">
-              <h2 className="text-2xl font-semibold">Capture Any Workflow</h2>
-              <p className="text-muted-foreground">
-                Describe the task you want to capture, and our AI will
-                automatically navigate the application and screenshot each step
-                of the workflow.
-              </p>
-            </div>
             <TaskInput
               onSubmit={handleTaskSubmit}
               isLoading={captureWorkflowMutation.isPending}
